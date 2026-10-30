@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local AI Chat</title>
+<style id="baseStyle">
+  :root{
+    --bg:#0f1115; --panel:#161922; --panel2:#1d212c; --border:#2a2f3d;
+    --text:#e6e8ee; --muted:#8a91a3; --accent:#6c8cff; --accent2:#4f6be0; --accent-text:#ffffff;
+    --user:#232a3f; --danger:#ff6b6b; --ok:#4cd694; --code-bg:#0a0c10;
+    --radius:10px; --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; --fs:15px; --maxw:820px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font:var(--fs)/1.55 var(--font);overflow:hidden}
+  button,input,select,textarea{font:inherit;color:inherit}
+  ::-webkit-scrollbar{width:10px;height:10px} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:10px}
+
+  #app{display:flex;height:100%;width:100%;overflow:hidden}
+  .side{background:var(--panel);display:flex;flex-direction:column;flex-shrink:0;min-height:0}
+  .side.collapsed{display:none}
+  #chatbar{width:270px;order:-1;border-right:1px solid var(--border)}
+  body[data-chats="right"] #chatbar{order:3;border-right:none;border-left:1px solid var(--border)}
+  #settingsbar{width:350px;order:2;border-left:1px solid var(--border)}
+  body[data-settings="left"] #settingsbar{order:-2;border-left:none;border-right:1px solid var(--border)}
+  .side-head{padding:12px;display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+  #main{flex:1;display:flex;flex-direction:column;min-width:0;order:0}
+
+  .btn{background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);padding:7px 12px;cursor:pointer;color:var(--text)}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent2);border-color:var(--accent2);color:var(--accent-text)}
+  .btn.primary:hover{background:var(--accent)}
+  .btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+  .btn.icon{padding:7px 10px}
+  .btn.on{border-color:var(--accent);color:var(--accent)}
+  .btn.small{padding:4px 9px;font-size:12px}
+
+  #newChat{flex:1}
+  #convList{flex:1;overflow-y:auto;padding:8px}
+  .conv{padding:9px 10px;border-radius:var(--radius);cursor:pointer;display:flex;align-items:center;gap:6px;color:var(--muted)}
+  .conv:hover{background:var(--panel2)}
+  .conv.active{background:var(--panel2);color:var(--text)}
+  .conv span.t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .conv .del{background:none;border:none;color:var(--muted);cursor:pointer;opacity:0;padding:2px 6px}
+  .conv:hover .del{opacity:1} .conv .del:hover{color:var(--danger)}
+  .conv .runningdot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:blinkdot 1s infinite}
+  @keyframes blinkdot{50%{opacity:.25}}
+
+  #topbar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap}
+  #topbar select{background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);padding:7px 10px;max-width:240px;color:var(--text)}
+  #capbadges{display:flex;gap:4px}
+  #capbadges span{font-size:11px;padding:2px 7px;border-radius:20px;background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
+  #topspacer{flex:1}
+  #status{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+  #dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+  #dot.ok{background:var(--ok)} #dot.bad{background:var(--danger)}
+
+  #messages{flex:1;overflow-y:auto;padding:20px 0}
+  .msg{max-width:var(--maxw);margin:0 auto;padding:8px 20px;display:flex;gap:12px}
+  .msg.cont{padding-top:0}
+  .msg.cont .avatar{visibility:hidden;height:0}
+  .avatar{width:30px;height:30px;border-radius:calc(var(--radius) - 2px);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+  .msg.user .avatar{background:var(--user);color:var(--accent)}
+  .msg.assistant .avatar{background:var(--accent2);color:var(--accent-text)}
+  .col{flex:1;min-width:0;overflow-wrap:anywhere}
+  .msg.user .body{background:var(--user);padding:10px 14px;border-radius:calc(var(--radius) + 2px);display:inline-block;max-width:100%}
+  .md p{margin:0 0 .7em} .md p:last-child{margin-bottom:0}
+  .md ul,.md ol{margin:.3em 0 .7em;padding-left:1.4em}
+  .md h1,.md h2,.md h3{margin:.8em 0 .4em;line-height:1.25}
+  .md blockquote{margin:.5em 0;padding:.2em 0 .2em 12px;border-left:3px solid var(--border);color:var(--muted)}
+  .md hr{border:none;border-top:1px solid var(--border);margin:1em 0}
+  .md code,.think-body code{background:var(--panel2);padding:1px 5px;border-radius:5px;font:.87em ui-monospace,Menlo,Consolas,monospace}
+  .tablewrap{overflow-x:auto;margin:.6em 0}
+  .md table{border-collapse:collapse;font-size:.93em}
+  .md th,.md td{border:1px solid var(--border);padding:5px 10px;text-align:left}
+  .md th{background:var(--panel2)}
+  .codewrap{position:relative;margin:.6em 0}
+  .codewrap pre{margin:0;background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;overflow-x:auto}
+  .codewrap pre code{background:none;padding:0;font-size:13px}
+  .copy{position:absolute;top:6px;right:6px;font-size:12px;padding:3px 8px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--muted)}
+  .copy:hover{color:var(--text)}
+  .meta{color:var(--muted);font-size:12px;margin-top:6px}
+  .actions{display:flex;gap:6px;margin-top:6px;opacity:0;transition:opacity .15s}
+  .msg:hover .actions{opacity:1}
+  .actions button{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 8px}
+  .actions button:hover{color:var(--text);border-color:var(--accent)}
+  .md.cursor>:last-child::after,.md.cursor:empty::after{content:"▍";animation:blink 1s steps(1) infinite;color:var(--accent)}
+  @keyframes blink{50%{opacity:0}}
+  .errbox{margin-top:8px;padding:9px 12px;border:1px solid var(--danger);border-radius:var(--radius);color:var(--danger);font-size:.93em;white-space:pre-wrap}
+  .stopped{color:var(--muted);font-style:italic;font-size:.93em}
+
+  /* thinking */
+  details.think,details.tool{margin:0 0 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--panel)}
+  details.think>summary,details.tool>summary{cursor:pointer;padding:7px 12px;color:var(--muted);font-size:.9em;list-style:none;display:flex;align-items:center;user-select:none}
+  details.think>summary::-webkit-details-marker,details.tool>summary::-webkit-details-marker{display:none}
+  details.think>summary::before,details.tool>summary::before{content:"▸";margin-right:8px;transition:transform .15s}
+  details[open].think>summary::before,details[open].tool>summary::before{transform:rotate(90deg)}
+  .think-body{padding:2px 14px 10px 14px;color:var(--muted);font-size:.93em;max-height:340px;overflow-y:auto;border-top:1px solid var(--border)}
+  .think-body p{margin:.5em 0}
+  details.tool pre{margin:0;padding:8px 14px 12px;font:12px ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);border-top:1px solid var(--border);max-height:300px;overflow:auto}
+  .live{display:flex;align-items:center;gap:6px;padding:4px 0 8px;color:var(--muted)}
+  .elapsed{font-size:12px;color:var(--muted);margin-left:6px}
+  .orb{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;flex-shrink:0;
+       background:radial-gradient(circle at 35% 35%,#fff,var(--accent) 45%,var(--accent2));animation:pulse 1.4s ease-out infinite}
+  .orb.sm{width:9px;height:9px}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 65%,transparent)}100%{box-shadow:0 0 0 12px transparent}}
+  .dots{display:inline-flex;align-items:center;margin-left:3px}
+  .dots i{display:inline-block;width:5px;height:5px;margin-left:3px;border-radius:50%;background:var(--accent);animation:bounce 1.2s infinite ease-in-out}
+  .dots i:nth-child(2){animation-delay:.15s} .dots i:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-5px);opacity:1}}
+  .shimmer{background:linear-gradient(90deg,var(--muted) 0%,var(--text) 50%,var(--muted) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmer 1.8s linear infinite}
+  @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.orb,.dots i,.shimmer,.spin,.conv .runningdot{animation:none}}
+
+  .thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+  .thumbs img{max-height:140px;max-width:220px;border-radius:8px;border:1px solid var(--border)}
+  .chipline{display:inline-block;font-size:12px;color:var(--muted);background:var(--panel2);border:1px solid var(--border);border-radius:20px;padding:2px 10px;margin:0 6px 6px 0}
+
+  #empty{max-width:560px;margin:12vh auto 0;text-align:center;color:var(--muted);padding:0 20px}
+  #empty h2{color:var(--text);margin-bottom:6px}
+
+  #composer{padding:14px;border-top:1px solid var(--border);background:var(--panel)}
+  #inputrow{max-width:var(--maxw);margin:0 auto;display:flex;gap:8px;align-items:flex-end}
+  #input{flex:1;background:var(--panel2);border:1px solid var(--border);border-radius:calc(var(--radius) + 2px);padding:11px 14px;resize:none;max-height:200px;outline:none;color:var(--text)}
+  #input:focus{border-color:var(--accent)}
+
+  /* settings */
+  #tabs{display:flex;gap:2px;padding:8px 8px 0;border-bottom:1px solid var(--border);overflow-x:auto;white-space:nowrap;flex-shrink:0}
+  #tabs button{background:none;border:none;border-bottom:2px solid transparent;padding:7px 10px;cursor:pointer;color:var(--muted)}
+  #tabs button:hover{color:var(--text)}
+  #tabs button.on{color:var(--text);border-bottom-color:var(--accent)}
+  #panels{flex:1;overflow-y:auto;padding:14px}
+  .tabpanel{display:none;flex-direction:column;gap:14px}
+  .tabpanel.on{display:flex}
+  .field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+  .field input[type=text],.field input[type=password],.field input[type=number],.field select,.field textarea{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:14px}
+  .field textarea{resize:vertical;min-height:60px}
+  .hint{font-size:12px;color:var(--muted);line-height:1.6}
+  .hint code{background:var(--bg);padding:1px 5px;border-radius:4px}
+  .sec{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);padding-bottom:4px;margin-top:4px}
+
+  @media(max-width:800px){
+    .side{position:fixed;top:0;bottom:0;z-index:20;box-shadow:0 0 40px rgba(0,0,0,.5)}
+    #chatbar{left:0} body[data-chats="right"] #chatbar{left:auto;right:0}
+    #settingsbar{right:0;width:min(94vw,350px)} body[data-settings="left"] #settingsbar{right:auto;left:0}
+  }
+  /*@@CSS*/
+</style>
+<style id="userStyle"></style>
+</head>
+<body data-chats="left" data-settings="right">
+<div id="app">
+  <aside id="chatbar" class="side">
+    <div class="side-head">
+      <button class="btn primary" id="newChat">+ New chat</button>
+    </div>
+    <div id="convList"></div>
+  </aside>
+
+  <div id="main">
+    <div id="topbar">
+      <button class="btn icon" id="toggleChats" title="Show / hide chat list">☰</button>
+      <select id="model" title="Model for this chat"><option value="">No models found</option></select>
+      <div id="capbadges"></div>
+      <button class="btn icon" id="refresh" title="Reload model list">↻</button>
+      <div id="topspacer"></div>
+      <div id="status"><span id="dot"></span><span id="statusText">Not connected</span></div>
+      <button class="btn icon" id="thinkToggle" title="Toggle thinking for models that support it">💭</button>
+      <button class="btn" id="exportChat" title="Download this chat as Markdown">Export</button>
+      <!--@@TOPBTNS-->
+      <button class="btn icon" id="toggleSettings" title="Settings">⚙</button>
+    </div>
+
+    <div id="messages"></div>
+
+    <div id="composer">
+      <!--@@ATTACH-->
+      <div id="inputrow">
+        <textarea id="input" rows="1" placeholder="Message your local model…  (Enter to send, Shift+Enter for newline)"></textarea>
+        <button class="btn primary" id="send">Send</button>
+        <button class="btn danger" id="stop" style="display:none">Stop</button>
+      </div>
+    </div>
+  </div>
+
+  <aside id="settingsbar" class="side collapsed">
+    <div class="side-head"><b>Settings</b><button class="btn icon" id="closeSettings">✕</button></div>
+    <div id="tabs">
+      <button data-tab="conn" class="on">Connection</button>
+      <button data-tab="chat">Chat</button>
+      <!--@@TABBTNS-->
+    </div>
+    <div id="panels">
+      <section class="tabpanel on" data-tab="conn">
+        <label class="field">Backend
+          <select id="backend">
+            <option value="ollama">Ollama</option>
+            <option value="openai">OpenAI-compatible (LM Studio, llama.cpp, Jan…)</option>
+          </select>
+        </label>
+        <label class="field">Server URL
+          <input id="baseUrl" type="text" spellcheck="false">
+        </label>
+        <label class="field">API key (only if your server needs one)
+          <input id="apiKey" type="password" placeholder="optional">
+        </label>
+        <div class="hint">
+          <b>Defaults:</b> Ollama <code>http://localhost:11434</code> · LM Studio <code>http://localhost:1234</code> · llama.cpp <code>http://localhost:8080</code><br><br>
+          If the browser blocks the connection (CORS), quit Ollama and restart it with <code>OLLAMA_ORIGINS="*"</code> set, or turn on CORS in LM Studio's server settings.
+        </div>
+      </section>
+
+      <section class="tabpanel" data-tab="chat">
+        <div class="sec">Generation</div>
+        <label class="field">Temperature: <span id="tempVal">0.7</span>
+          <input id="temp" type="range" min="0" max="2" step="0.05" value="0.7">
+        </label>
+        <label class="field">Context length (Ollama only, 0 = server default)
+          <input id="numCtx" type="number" min="0" step="1024">
+        </label>
+        <div class="hint">Bigger context fits more history, files and images but uses more memory. Changing it makes Ollama reload the model.</div>
+
+        <div class="sec">Thinking</div>
+        <label class="field">Thinking (models that support it)
+          <select id="thinkMode"><option value="on">On</option><option value="off">Off</option></select>
+        </label>
+        <label class="field">Show thinking text
+          <select id="thinkDisplay">
+            <option value="auto">Open while thinking, then collapse</option>
+            <option value="collapsed">Always collapsed</option>
+            <option value="hidden">Hidden (just show the animation)</option>
+          </select>
+        </label>
+
+        <div class="sec">System prompt</div>
+        <label class="field">Default for all chats
+          <textarea id="system" rows="3" placeholder="e.g. You are a concise, helpful assistant."></textarea>
+        </label>
+        <label class="field">This chat only (overrides the default)
+          <textarea id="chatSystem" rows="3" placeholder="Leave empty to use the default"></textarea>
+        </label>
+      </section>
+      <!--@@PANELS-->
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const DEFAULTS = {
+    backend:'ollama', baseUrl:'http://localhost:11434', temp:0.7, system:'', apiKey:'', model:'',
+    thinkMode:'on', thinkDisplay:'auto', numCtx:8192,
+    chatsPos:'left', settingsPos:'right', chatsOpen:true, settingsOpen:false
+  };
+  const URL_DEFAULT = { ollama:'http://localhost:11434', openai:'http://localhost:1234' };
+  const FENCE = '`'.repeat(3);
+
+  // ---------- storage ----------
+  const store = {
+    get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } },
+    set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+  };
+  const idb = (() => {
+    let dbp;
+    const open = () => dbp || (dbp = new Promise((res, rej) => {
+      const r = indexedDB.open('local-ai-chat', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    }));
+    return {
+      async get(k){ try { const db = await open(); return await new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); } catch(e){ return undefined; } },
+      async set(k, v){ try { const db = await open(); await new Promise((res, rej) => { const t = db.transaction('kv','readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); } catch(e){ console.warn('save failed', e); } }
+    };
+  })();
+
+  let settings = Object.assign({}, DEFAULTS, store.get('lac_settings', {}));
+  let convs = [];
+  let currentId = store.get('lac_current', null);
+  const caps = {};
+  const running = new Map();     // convId -> AbortController
+  const msgEls = new Map();      // message object -> element
+  let modelNames = [];
+
+  const saveSettings = () => store.set('lac_settings', settings);
+  let saveTimer = null;
+  const saveConvs = () => { store.set('lac_current', currentId); clearTimeout(saveTimer); saveTimer = setTimeout(() => idb.set('convs', convs), 250); };
+  const flushSave = () => { clearTimeout(saveTimer); store.set('lac_current', currentId); return idb.set('convs', convs); };
+  const current = () => convs.find(c => c.id === currentId);
+
+  // ---------- helpers ----------
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const base = () => settings.baseUrl.replace(/\/+$/, '');
+  const headers = () => {
+    const h = { 'Content-Type':'application/json' };
+    if (settings.apiKey) h['Authorization'] = 'Bearer ' + settings.apiKey;
+    return h;
+  };
+  const fmtDur = ms => { const s = ms / 1000; return s < 60 ? s.toFixed(s < 10 ? 1 : 0) + 's' : Math.floor(s / 60) + 'm ' + Math.round(s % 60) + 's'; };
+  function setStatus(ok, text){
+    $('dot').className = ok === true ? 'ok' : ok === false ? 'bad' : '';
+    $('statusText').textContent = text;
+  }
+
+  // ---------- markdown (small, safe) ----------
+  function render(md){
+    const blocks = [];
+    md = md.replace(/```(\w*)\n?([\s\S]*?)(```|$)/g, (_, lang, code) => {
+      blocks.push({lang, code: code.replace(/\n$/, '')});
+      return '\u0000' + (blocks.length - 1) + '\u0000';
+    });
+    md = esc(md);
+    const inline = t => t
+      .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:var(--accent)">$1</a>');
+    const out = [];
+    let list = null;
+    const closeList = () => { if (list){ out.push(`</${list}>`); list = null; } };
+    const isRow = l => /^\s*\|.*\|\s*$/.test(l);
+    const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => inline(c.trim()));
+    const lines = md.split('\n');
+    for (let i = 0; i < lines.length; i++){
+      const line = lines[i];
+      let m;
+      if (isRow(line) && i + 1 < lines.length && /^\s*\|?[\s:\-|]+\|?\s*$/.test(lines[i+1]) && lines[i+1].includes('-')){
+        closeList();
+        const head = cells(line); i++;
+        const rows = [];
+        while (i + 1 < lines.length && isRow(lines[i+1])){ i++; rows.push(cells(lines[i])); }
+        out.push('<div class="tablewrap"><table><thead><tr>' + head.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>' +
+          rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('') + '</tbody></table></div>');
+        continue;
+      }
+      if ((m = line.match(/^\u0000(\d+)\u0000$/))) { closeList(); out.push(line); }
+      else if ((m = line.match(/^(#{1,3})\s+(.*)/))) { closeList(); out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); }
+      else if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) { closeList(); out.push('<hr>'); }
+      else if ((m = line.match(/^&gt;\s?(.*)/))) { closeList(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); }
+      else if ((m = line.match(/^\s*[-*]\s+(.*)/))) { if (list !== 'ul'){ closeList(); out.push('<ul>'); list = 'ul'; } out.push(`<li>${inline(m[1])}</li>`); }
+      else if ((m = line.match(/^\s*\d+\.\s+(.*)/))) { if (list !== 'ol'){ closeList(); out.push('<ol>'); list = 'ol'; } out.push(`<li>${inline(m[1])}</li>`); }
+      else if (!line.trim()) { closeList(); out.push(''); }
+      else { closeList(); out.push(`<p>${inline(line)}</p>`); }
+    }
+    closeList();
+    return out.join('\n').replace(/\u0000(\d+)\u0000/g, (_, i) => {
+      const b = blocks[+i];
+      return `<div class="codewrap"><button class="copy">Copy</button><pre><code>${esc(b.code)}</code></pre></div>`;
+    });
+  }
+
+  // split <think>…</think> that some models put inside the normal content
+  function splitThink(raw){
+    const o = raw.indexOf('<think>');
+    if (o === -1){
+      const c0 = raw.indexOf('</think>');
+      if (c0 !== -1) return { thinking: raw.slice(0, c0), content: raw.slice(c0 + 8).replace(/^\s+/, '') };
+      return { thinking:'', content: raw };
+    }
+    const pre = raw.slice(0, o);
+    const c = raw.indexOf('</think>', o);
+    if (c === -1) return { thinking: raw.slice(o + 7), content: pre };
+    return { thinking: raw.slice(o + 7, c), content: pre + raw.slice(c + 8).replace(/^\s+/, '') };
+  }
+
+  // ---------- capabilities ----------
+  async function ensureCaps(model){
+    if (!model || settings.backend !== 'ollama') return caps[model] || null;
+    if (caps[model]) return caps[model];
+    try {
+      const r = await fetch(base() + '/api/show', { method:'POST', headers: headers(), body: JSON.stringify({ model, name: model }) });
+      if (!r.ok) throw new Error('show failed');
+      const list = (await r.json()).capabilities || [];
+      caps[model] = { known: list.length > 0, thinking: list.includes('thinking'), vision: list.includes('vision'), tools: list.includes('tools') };
+    } catch(e){ caps[model] = { known:false }; }
+    updateCapBadges();
+    return caps[model];
+  }
+  function updateCapBadges(){
+    const c = current(), model = (c && c.model) || settings.model, k = caps[model];
+    $('capbadges').innerHTML = k && k.known
+      ? [k.vision ? '<span>👁 vision</span>' : '', k.thinking ? '<span>💭 thinking</span>' : '', k.tools ? '<span>🔧 tools</span>' : ''].join('')
+      : '';
+  }
+  function thinkParam(model){
+    if (settings.backend !== 'ollama') return undefined;
+    const k = caps[model];
+    if (!k || !k.thinking) return undefined;
+    return settings.thinkMode !== 'off';
+  }
+
+  // ---------- conversations ----------
+  function makeChat(){
+    const c = { id: uid(), title:'New chat', messages:[], model: settings.model || '', system:'', created: Date.now(), updated: Date.now() };
+    convs.push(c); currentId = c.id; saveConvs();
+    return c;
+  }
+  function renderConvList(){
+    const el = $('convList');
+    el.innerHTML = '';
+    [...convs].sort((a, b) => b.updated - a.updated).forEach(c => {
+      const d = document.createElement('div');
+      d.className = 'conv' + (c.id === currentId ? ' active' : '');
+      d.innerHTML = `<span class="t">${esc(c.title)}</span>${running.has(c.id) ? '<span class="runningdot"></span>' : ''}<button class="del" title="Delete">✕</button>`;
+      d.onclick = () => { currentId = c.id; saveConvs(); renderConvList(); renderMessages(); syncChatFields(); syncModelSelect(); updateRunUI(); };
+      d.querySelector('.del').onclick = e => {
+        e.stopPropagation();
+        const ctl = running.get(c.id); if (ctl) ctl.abort();
+        convs = convs.filter(x => x.id !== c.id);
+        if (currentId === c.id) currentId = convs[0] ? convs[0].id : null;
+        saveConvs(); renderConvList(); renderMessages(); syncChatFields(); syncModelSelect(); updateRunUI();
+      };
+      el.appendChild(d);
+    });
+  }
+
+  // ---------- message rendering ----------
+  function userHTML(m){
+    let h = '';
+    if (m.auto) h += `<div class="chipline">📷 ${esc(m.autoLabel || 'Screen capture')}</div>`;
+    if (m.images && m.images.length) h += '<div class="thumbs">' + m.images.map(u => `<img src="${u}" alt="attachment">`).join('') + '</div>';
+    if (m.files && m.files.length) h += '<div>' + m.files.map(f => `<span class="chipline">📄 ${esc(f.name)}</span>`).join('') + '</div>';
+    if (m.content) h += `<div class="body"><div>${esc(m.content).replace(/\n/g, '<br>')}</div></div>`;
+    return h;
+  }
+
+  function assistantHTML(m){
+    let h = '';
+    const toolsPending = (m.toolCalls || []).length > 0;
+    const thinkingNow = m.streaming && !m.content && !toolsPending;
+    const hasThink = m.thinking && m.thinking.trim();
+    const showBlock = settings.thinkDisplay !== 'hidden' && hasThink;
+    if (showBlock){
+      const open = m.thinkOpen !== undefined ? m.thinkOpen : (settings.thinkDisplay === 'auto' && thinkingNow);
+      const label = thinkingNow ? 'Thinking' : 'Thought' + (m.thinkMs ? ' for ' + fmtDur(m.thinkMs) : '');
+      h += `<details class="think" data-kind="think"${open ? ' open' : ''}><summary>` +
+        (thinkingNow ? '<span class="orb sm"></span><span class="shimmer">Thinking</span><span class="dots"><i></i><i></i><i></i></span>' +
+          `<span class="elapsed" data-t0="${m.t0}"></span>` : '💭&nbsp;' + label) +
+        `</summary><div class="think-body">${render(m.thinking)}</div></details>`;
+    } else if (thinkingNow){
+      h += `<div class="live"><span class="orb"></span><span class="shimmer">${hasThink ? 'Thinking' : 'Thinking'}</span><span class="dots"><i></i><i></i><i></i></span><span class="elapsed" data-t0="${m.t0}"></span></div>`;
+    }
+    if (m.content) h += `<div class="md${m.streaming ? ' cursor' : ''}">${render(m.content)}</div>`;
+    (m.toolCalls || []).forEach(tc => {
+      const argStr = JSON.stringify(tc.args || {});
+      const short = argStr.length > 60 ? argStr.slice(0, 57) + '…' : argStr;
+      const st = tc.status === 'running' ? '<span class="spin"></span>' : tc.status === 'error' ? '⚠️ ' : '🔧 ';
+      h += `<details class="tool" data-kind="tool" data-id="${esc(tc.id)}"${tc.open ? ' open' : ''}><summary>${st}${esc(tc.name)}<span style="opacity:.6;margin-left:6px">${esc(short)}</span></summary>` +
+        `<pre>${esc('Arguments: ' + JSON.stringify(tc.args || {}, null, 2) + (tc.result !== undefined ? '\n\nResult:\n' + String(tc.result).slice(0, 4000) : ''))}</pre></details>`;
+    });
+    if (m.stopped) h += '<div class="stopped">(stopped)</div>';
+    if (m.error) h += `<div class="errbox">⚠️ ${esc(m.error)}</div>`;
+    return h;
+  }
+
+  function fillMsgEl(d, m){
+    d._msg = m;
+    const col = d.querySelector('.col');
+    if (m.role === 'user'){ col.innerHTML = userHTML(m); return; }
+    let h = assistantHTML(m);
+    if (!m.streaming){
+      if (m.stats) h += `<div class="meta">${esc(m.stats)}</div>`;
+      const c = current();
+      const isLast = c && c.messages[c.messages.length - 1] === m && !running.has(c.id);
+      h += '<div class="actions"><button data-act="copy">Copy</button>' + (isLast ? '<button data-act="regen">Regenerate</button>' : '') + '</div>';
+    }
+    col.innerHTML = h;
+  }
+
+  function buildMsgEl(m, prev){
+    const d = document.createElement('div');
+    d.className = 'msg ' + m.role + (prev && prev.role === 'assistant' && m.role === 'assistant' ? ' cont' : '');
+    d.innerHTML = `<div class="avatar">${m.role === 'user' ? 'You' : 'AI'}</div><div class="col"></div>`;
+    fillMsgEl(d, m);
+    msgEls.set(m, d);
+    return d;
+  }
+
+  function renderMessages(keepScroll){
+    const box = $('messages');
+    const st = box.scrollTop;
+    box.innerHTML = '';
+    msgEls.clear();
+    const c = current();
+    if (!c || !c.messages.length){
+      box.innerHTML = `<div id="empty"><h2>Chat with your local models</h2>
+        <p>Everything stays on your machine. Pick a model above, then say something.</p>
+        <p style="font-size:13px">Not connected? Open <b>⚙</b> Settings to set the server URL.</p></div>`;
+      return;
+    }
+    c.messages.forEach((m, i) => box.appendChild(buildMsgEl(m, c.messages[i - 1])));
+    box.scrollTop = keepScroll ? st : box.scrollHeight;
+  }
+
+  // throttled per-frame updates while streaming
+  const pending = new Set();
+  let rafId = 0;
+  function scheduleFill(m){
+    pending.add(m);
+    if (!rafId) rafId = requestAnimationFrame(() => {
+      rafId = 0;
+      const box = $('messages');
+      const near = box.scrollHeight - box.scrollTop - box.clientHeight < 140;
+      pending.forEach(x => { const el = msgEls.get(x); if (el) fillMsgEl(el, x); });
+      pending.clear();
+      if (near) box.scrollTop = box.scrollHeight;
+    });
+  }
+  setInterval(() => {
+    document.querySelectorAll('.elapsed').forEach(e => { e.textContent = fmtDur(Date.now() - Number(e.dataset.t0)); });
+  }, 500);
+
+  // delegated clicks inside the message list
+  $('messages').addEventListener('click', e => {
+    const t = e.target;
+    if (t.classList.contains('copy')){
+      const code = t.parentNode.querySelector('code').textContent;
+      navigator.clipboard.writeText(code).then(() => { t.textContent = 'Copied'; setTimeout(() => t.textContent = 'Copy', 1200); }).catch(() => { t.textContent = 'Failed'; });
+      return;
+    }
+    const act = t.dataset && t.dataset.act;
+    if (act){
+      const msg = t.closest('.msg')._msg;
+      if (act === 'copy'){ navigator.clipboard.writeText(msg.content || '').then(() => { t.textContent = 'Copied'; setTimeout(() => t.textContent = 'Copy', 1200); }); }
+      if (act === 'regen') regenerate();
+      return;
+    }
+    const sum = t.closest('summary');
+    if (sum){
+      const det = sum.parentNode, el = det.closest('.msg'); if (!el) return;
+      const m = el._msg, willOpen = !det.open;
+      if (det.dataset.kind === 'think') m.thinkOpen = willOpen;
+      else if (det.dataset.kind === 'tool'){ const tc = (m.toolCalls || []).find(x => x.id === det.dataset.id); if (tc) tc.open = willOpen; }
+    }
+  });
+
+  // ---------- wire format ----------
+  function buildPayload(c){
+    const out = [];
+    const sys = (c.system || settings.system || '').trim();
+    if (sys) out.push({ role:'system', content: sys });
+    for (const m of c.messages){
+      if (m.role === 'user'){
+        let content = m.content || '';
+        if (m.files && m.files.length) content += (content ? '\n\n' : '') + m.files.map(f => `[Attached file: ${f.name}]\n${FENCE}\n${f.text}\n${FENCE}`).join('\n\n');
+        out.push({ role:'user', content, images: m.images || [] });
+      } else if (m.role === 'assistant'){
+        const tcs = (m.toolCalls || []).filter(t => t.status !== 'running');
+        if (!m.content && !tcs.length) continue;
+        out.push({ role:'assistant', content: m.content || '', tool_calls: tcs.map(t => ({ id:t.id, name:t.name, args:t.args })) });
+        tcs.forEach(t => out.push({ role:'tool', tool_call_id:t.id, tool_name:t.name, content: String(t.result === undefined ? '' : t.result) }));
+      }
+    }
+    return out;
+  }
+  const b64 = d => d.replace(/^data:[^,]+,/, '');
+  function toWire(messages){
+    if (settings.backend === 'ollama') return messages.map(m => {
+      if (m.role === 'user'){ const o = { role:'user', content:m.content }; if (m.images && m.images.length) o.images = m.images.map(b64); return o; }
+      if (m.role === 'assistant'){ const o = { role:'assistant', content:m.content }; if (m.tool_calls && m.tool_calls.length) o.tool_calls = m.tool_calls.map(t => ({ function:{ name:t.name, arguments:t.args || {} } })); return o; }
+      if (m.role === 'tool') return { role:'tool', tool_name:m.tool_name, content:m.content };
+      return { role:m.role, content:m.content };
+    });
+    return messages.map(m => {
+      if (m.role === 'user'){
+        if (m.images && m.images.length) return { role:'user', content:[{ type:'text', text:m.content || ' ' }, ...m.images.map(u => ({ type:'image_url', image_url:{ url:u } }))] };
+        return { role:'user', content:m.content };
+      }
+      if (m.role === 'assistant'){ const o = { role:'assistant', content:m.content || null }; if (m.tool_calls && m.tool_calls.length) o.tool_calls = m.tool_calls.map(t => ({ id:t.id, type:'function', function:{ name:t.name, arguments:JSON.stringify(t.args || {}) } })); return o; }
+      if (m.role === 'tool') return { role:'tool', tool_call_id:m.tool_call_id, content:m.content };
+      return { role:m.role, content:m.content };
+    });
+  }
+
+  // ---------- tools registry (filled in by later features) ----------
+  const TOOLS = {};   // name -> { def:{name,description,parameters}, enabled:()=>bool, run:async(args,ctx)=>string }
+  function activeToolDefs(model){
+    const k = caps[model];
+    if (k && k.known && !k.tools) return [];
+    return Object.values(TOOLS).filter(t => t.enabled()).map(t => ({ type:'function', function:t.def }));
+  }
+  async function runTool(name, args, ctx){
+    const t = TOOLS[name];
+    if (!t) throw new Error('Unknown tool: ' + name);
+    return String(await t.run(args || {}, ctx));
+  }
+
+  // ---------- streaming ----------
+  const normArgs = a => {
+    if (a && typeof a === 'object') return a;
+    if (typeof a === 'string' && a.trim()){ try { return JSON.parse(a); } catch(e){ return {}; } }
+    return {};
+  };
+
+  async function streamCompletion({ model, messages, tools, signal, onDelta }){
+    const out = { content:'', thinking:'', toolCalls:[], evalCount:0, evalDur:0, chunks:0, _raw:'', _field:'' };
+    const wire = toWire(messages);
+    let r;
+    if (settings.backend === 'ollama'){
+      const body = { model, messages:wire, stream:true, options:{ temperature: settings.temp } };
+      if (settings.numCtx > 0) body.options.num_ctx = settings.numCtx;
+      const th = thinkParam(model); if (th !== undefined) body.think = th;
+      if (tools && tools.length) body.tools = tools;
+      r = await fetch(base() + '/api/chat', { method:'POST', headers: headers(), signal, body: JSON.stringify(body) });
+    } else {
+      const body = { model, messages:wire, stream:true, temperature: settings.temp };
+      if (tools && tools.length) body.tools = tools;
+      r = await fetch(base() + '/v1/chat/completions', { method:'POST', headers: headers(), signal, body: JSON.stringify(body) });
+    }
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + (await r.text()).slice(0, 300));
+
+    const partial = {};
+    const refresh = () => { const s = splitThink(out._raw); out.content = s.content; out.thinking = out._field + s.thinking; };
+    const errText = e => typeof e === 'string' ? e : (e.message || JSON.stringify(e));
+    const handleLine = line => {
+      if (settings.backend === 'ollama'){
+        let j; try { j = JSON.parse(line); } catch(e){ return; }
+        if (j.error) throw new Error(errText(j.error));
+        const mm = j.message || {};
+        if (mm.thinking) out._field += mm.thinking;
+        if (mm.content) out._raw += mm.content;
+        if (mm.tool_calls) mm.tool_calls.forEach(tc => out.toolCalls.push({ id:'call_' + uid(), name: tc.function.name, args: normArgs(tc.function.arguments) }));
+        if (j.done){ out.evalCount = j.eval_count || 0; out.evalDur = j.eval_duration || 0; }
+      } else {
+        if (!line.startsWith('data:')) return;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') return;
+        let j; try { j = JSON.parse(data); } catch(e){ return; }
+        if (j.error) throw new Error(errText(j.error));
+        const d = j.choices && j.choices[0] && j.choices[0].delta;
+        if (!d) return;
+        if (d.reasoning_content) out._field += d.reasoning_content; else if (d.reasoning) out._field += d.reasoning;
+        if (d.content) out._raw += d.content;
+        if (d.tool_calls) for (const t of d.tool_calls){
+          const k = t.index == null ? 0 : t.index;
+          const p = partial[k] || (partial[k] = { id: t.id || ('call_' + uid()), name:'', args:'' });
+          if (t.id) p.id = t.id;
+          if (t.function && t.function.name) p.name += t.function.name;
+          if (t.function && t.function.arguments) p.args += t.function.arguments;
+        }
+      }
+      out.chunks++; refresh(); onDelta(out);
+    };
+
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    while (true){
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream:true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0){
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (line) handleLine(line);
+      }
+    }
+    if (buf.trim()) handleLine(buf.trim());
+    Object.keys(partial).sort((a, b) => a - b).forEach(k => out.toolCalls.push({ id:partial[k].id, name:partial[k].name, args:normArgs(partial[k].args) }));
+    refresh();
+    return out;
+  }
+
+  // ---------- one assistant turn (with tool loop) ----------
+  function applyOut(msg, out){
+    msg.content = out.content; msg.thinking = out.thinking;
+    if (out.thinking && !msg.thinkStart) msg.thinkStart = Date.now();
+    if (msg.thinkStart && !msg.thinkMs && (out.content || (out.toolCalls && out.toolCalls.length))) msg.thinkMs = Date.now() - msg.thinkStart;
+  }
+  async function runTurn(c, { signal, onUpdate, maxRounds = 8 }){
+    const model = c.model || settings.model;
+    await ensureCaps(model);
+    for (let round = 0; round < maxRounds; round++){
+      const msg = { role:'assistant', content:'', thinking:'', toolCalls:[], model, streaming:true, t0:Date.now() };
+      const payload = buildPayload(c);
+      c.messages.push(msg);
+      onUpdate('new', msg);
+      let res = null, aborted = false;
+      try {
+        res = await streamCompletion({ model, messages:payload, tools:activeToolDefs(model), signal,
+          onDelta: out => { applyOut(msg, out); onUpdate('delta', msg); } });
+        applyOut(msg, res);
+      } catch(err){
+        if (err.name === 'AbortError') aborted = true;
+        else msg.error = (err instanceof TypeError ? 'Can’t reach the server. Is it running, and is CORS allowed? (see Settings → Connection)' : err.message);
+      }
+      msg.streaming = false;
+      if (msg.thinkStart && !msg.thinkMs) msg.thinkMs = Date.now() - msg.thinkStart;
+      if (res){
+        const secs = (Date.now() - msg.t0) / 1000;
+        msg.stats = res.evalCount && res.evalDur ? `${res.evalCount} tokens · ${(res.evalCount / (res.evalDur / 1e9)).toFixed(1)} tok/s · ${model}` : `${res.chunks} chunks · ${secs.toFixed(1)}s · ${model}`;
+      }
+      if (aborted){ msg.stopped = true; }
+      onUpdate('delta', msg);
+      if (aborted || msg.error || !res.toolCalls.length) break;
+
+      msg.toolCalls = res.toolCalls.map(t => ({ ...t, status:'running' }));
+      onUpdate('delta', msg);
+      for (const tc of msg.toolCalls){
+        if (signal.aborted){ tc.status = 'error'; tc.result = '(cancelled)'; continue; }
+        try { tc.result = await runTool(tc.name, tc.args, { conv:c, signal }); tc.status = 'done'; }
+        catch(e){ tc.result = 'Error: ' + e.message; tc.status = 'error'; }
+        onUpdate('delta', msg);
+      }
+      if (signal.aborted){ msg.stopped = true; onUpdate('delta', msg); break; }
+      if (round === maxRounds - 1){ msg.error = 'Stopped after ' + maxRounds + ' tool rounds.'; onUpdate('delta', msg); }
+    }
+  }
+
+  // ---------- sending ----------
+  const attach = { images:[], files:[] };
+  function renderAttachBar(){ /*@@ATTACHBAR*/ }
+
+  function updateRunUI(){
+    const c = current(), isRun = !!(c && running.has(c.id));
+    $('send').style.display = isRun ? 'none' : '';
+    $('stop').style.display = isRun ? '' : 'none';
+  }
+
+  async function startRun(c){
+    const ctrl = new AbortController();
+    running.set(c.id, ctrl);
+    updateRunUI(); renderConvList();
+    const onUpdate = (kind, msg) => {
+      if (current() !== c) return;
+      if (kind === 'new'){
+        const box = $('messages');
+        if (!box.querySelector('.msg')) box.innerHTML = '';
+        const i = c.messages.indexOf(msg);
+        box.appendChild(buildMsgEl(msg, c.messages[i - 1]));
+        box.scrollTop = box.scrollHeight;
+      } else scheduleFill(msg);
+    };
+    try { await runTurn(c, { signal: ctrl.signal, onUpdate }); }
+    catch(e){ console.error(e); }
+    finally {
+      running.delete(c.id);
+      c.updated = Date.now();
+      await flushSave();
+      renderConvList(); updateRunUI();
+      if (current() === c) renderMessages(true);
+    }
+  }
+
+  async function send(){
+    const text = $('input').value.trim();
+    const c0 = current();
+    if (c0 && running.has(c0.id)) return;
+    if (!text && !attach.images.length && !attach.files.length) return;
+    const model = (c0 && c0.model) || settings.model;
+    if (!model){ setStatus(false, 'Select a model first'); return; }
+    const c = c0 || makeChat();
+    if (!c.model) c.model = model;
+    const msg = { role:'user', content:text };
+    if (attach.images.length) msg.images = attach.images.splice(0);
+    if (attach.files.length) msg.files = attach.files.splice(0);
+    renderAttachBar();
+    c.messages.push(msg);
+    if (c.title === 'New chat') c.title = (text || (msg.files && msg.files[0].name) || 'Image chat').slice(0, 40) + (text.length > 40 ? '…' : '');
+    c.updated = Date.now();
+    $('input').value = ''; autosize();
+    saveConvs(); renderConvList(); renderMessages(); syncChatFields(); syncModelSelect();
+    await startRun(c);
+  }
+
+  async function regenerate(){
+    const c = current(); if (!c || running.has(c.id)) return;
+    while (c.messages.length && c.messages[c.messages.length - 1].role !== 'user') c.messages.pop();
+    if (!c.messages.length) return;
+    renderMessages();
+    await startRun(c);
+  }
+
+  // ---------- models ----------
+  function syncModelSelect(){
+    const sel = $('model'), c = current();
+    const want = (c && c.model) || settings.model;
+    const names = modelNames.slice();
+    if (want && !names.includes(want)) names.unshift(want);
+    sel.innerHTML = names.length
+      ? names.map(n => `<option value="${esc(n)}">${esc(n)}${modelNames.includes(n) || !modelNames.length ? '' : ' (not installed)'}</option>`).join('')
+      : '<option value="">No models found</option>';
+    if (want) sel.value = want;
+    updateCapBadges();
+    if (want) ensureCaps(want);
+  }
+  async function loadModels(){
+    setStatus(null, 'Connecting…');
+    try {
+      let names = [];
+      if (settings.backend === 'ollama'){
+        const r = await fetch(base() + '/api/tags', { headers: headers() });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        names = ((await r.json()).models || []).map(m => m.name);
+      } else {
+        const r = await fetch(base() + '/v1/models', { headers: headers() });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        names = ((await r.json()).data || []).map(m => m.id);
+      }
+      modelNames = names;
+      if (!names.includes(settings.model)){ settings.model = names[0] || ''; saveSettings(); }
+      const c = current(); if (c && !c.model && settings.model){ c.model = settings.model; saveConvs(); }
+      syncModelSelect();
+      setStatus(true, names.length + ' model' + (names.length === 1 ? '' : 's') + ' available');
+    } catch(err){
+      modelNames = [];
+      syncModelSelect();
+      setStatus(false, 'Can’t reach server');
+      console.warn(err);
+    }
+  }
+
+  // ---------- settings UI ----------
+  function applyLayout(){
+    document.body.dataset.chats = settings.chatsPos;
+    document.body.dataset.settings = settings.settingsPos;
+    $('chatbar').classList.toggle('collapsed', !settings.chatsOpen);
+    $('settingsbar').classList.toggle('collapsed', !settings.settingsOpen);
+    $('toggleSettings').classList.toggle('on', settings.settingsOpen);
+    $('thinkToggle').classList.toggle('on', settings.thinkMode !== 'off');
+  }
+  function syncChatFields(){
+    const c = current();
+    $('chatSystem').value = c ? (c.system || '') : '';
+    $('chatSystem').disabled = !c;
+  }
+  function showTab(name){
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+    document.querySelectorAll('.tabpanel').forEach(p => p.classList.toggle('on', p.dataset.tab === name));
+  }
+  $('tabs').addEventListener('click', e => { if (e.target.dataset && e.target.dataset.tab) showTab(e.target.dataset.tab); });
+
+  function autosize(){ const t = $('input'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }
+  $('input').addEventListener('input', autosize);
+  $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); send(); } });
+  $('send').onclick = send;
+  $('stop').onclick = () => { const c = current(); const ctl = c && running.get(c.id); if (ctl) ctl.abort(); };
+  $('newChat').onclick = () => { makeChat(); renderConvList(); renderMessages(); syncChatFields(); syncModelSelect(); updateRunUI(); $('input').focus(); };
+  $('refresh').onclick = loadModels;
+  $('toggleChats').onclick = () => { settings.chatsOpen = !settings.chatsOpen; saveSettings(); applyLayout(); };
+  $('toggleSettings').onclick = () => { settings.settingsOpen = !settings.settingsOpen; saveSettings(); applyLayout(); };
+  $('closeSettings').onclick = () => { settings.settingsOpen = false; saveSettings(); applyLayout(); };
+  $('thinkToggle').onclick = () => { settings.thinkMode = settings.thinkMode === 'off' ? 'on' : 'off'; $('thinkMode').value = settings.thinkMode; saveSettings(); applyLayout(); };
+  $('model').onchange = e => {
+    const c = current();
+    settings.model = e.target.value; saveSettings();
+    if (c){ c.model = e.target.value; saveConvs(); }
+    updateCapBadges(); ensureCaps(e.target.value);
+  };
+  $('backend').onchange = e => {
+    settings.backend = e.target.value;
+    settings.baseUrl = URL_DEFAULT[settings.backend];
+    $('baseUrl').value = settings.baseUrl;
+    saveSettings(); loadModels();
+  };
+  $('baseUrl').onchange = e => { settings.baseUrl = e.target.value.trim(); saveSettings(); loadModels(); };
+  $('apiKey').onchange = e => { settings.apiKey = e.target.value; saveSettings(); loadModels(); };
+  $('system').oninput = e => { settings.system = e.target.value; saveSettings(); };
+  $('chatSystem').oninput = e => { const c = current(); if (c){ c.system = e.target.value; saveConvs(); } };
+  $('temp').oninput = e => { settings.temp = parseFloat(e.target.value); $('tempVal').textContent = settings.temp.toFixed(2); saveSettings(); };
+  $('numCtx').onchange = e => { settings.numCtx = Math.max(0, parseInt(e.target.value, 10) || 0); saveSettings(); };
+  $('thinkMode').onchange = e => { settings.thinkMode = e.target.value; saveSettings(); applyLayout(); };
+  $('thinkDisplay').onchange = e => { settings.thinkDisplay = e.target.value; saveSettings(); renderMessages(true); };
+
+  // ---------- export ----------
+  $('exportChat').onclick = () => {
+    const c = current(); if (!c) return;
+    const md = '# ' + c.title + '\n\n' + c.messages.filter(m => m.content).map(m => `**${m.role === 'user' ? 'You' : 'AI'}:**\n\n${m.content}`).join('\n\n---\n\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([md], { type:'text/markdown' }));
+    a.download = (c.title.replace(/[^\w\-]+/g, '_') || 'chat') + '.md';
+    a.click(); URL.revokeObjectURL(a.href);
+  };
+
+  /*@@FEATURES*/
+
+  // ---------- init ----------
+  async function init(){
+    $('backend').value = settings.backend;
+    $('baseUrl').value = settings.baseUrl;
+    $('apiKey').value = settings.apiKey;
+    $('system').value = settings.system;
+    $('temp').value = settings.temp;
+    $('tempVal').textContent = Number(settings.temp).toFixed(2);
+    $('numCtx').value = settings.numCtx;
+    $('thinkMode').value = settings.thinkMode;
+    $('thinkDisplay').value = settings.thinkDisplay;
+    applyLayout();
+
+    let saved = await idb.get('convs');
+    if (!Array.isArray(saved)) saved = store.get('lac_convs', []);
+    convs = saved;
+    convs.forEach(c => c.messages.forEach(m => {
+      m.streaming = false;
+      (m.toolCalls || []).forEach(t => { if (t.status === 'running'){ t.status = 'error'; t.result = '(interrupted)'; } });
+    }));
+    if (!convs.find(c => c.id === currentId)) currentId = convs.length ? [...convs].sort((a, b) => b.updated - a.updated)[0].id : null;
+    renderConvList(); renderMessages(); syncChatFields(); updateRunUI();
+    loadModels();
+  }
+  init();
+})();
+</script>
+</body>
+</html>
