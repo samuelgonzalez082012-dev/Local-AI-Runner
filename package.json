@@ -1,16 +1,23 @@
 {
-  "name": "miniature-quartz-consult-jo9xi",
-  "productName": "miniature-quartz-consult-jo9xi",
-  "description": "My Electron application description",
-  "keywords": [],
-  "main": "./main.js",
-  "version": "1.0.0",
+  "name": "local-ai-runner",
+  "productName": "Local AI Runner",
+  "version": "1.2.4",
+  "description": "A private desktop workspace for chatting with local AI models.",
   "author": "samue",
-  "scripts": {
-    "start": "electron ."
+  "private": true,
+  "main": "main.js",
+  "engines": {
+    "node": ">=22.13.0"
   },
-  "dependencies": {},
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "mammoth": "1.13.0",
+    "pdfjs-dist": "6.2.108"
+  },
   "devDependencies": {
-    "electron": "43.4.0"
+    "electron": "45.2.0"
   }
 }

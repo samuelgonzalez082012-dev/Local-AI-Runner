@@ -1,2 +1,7 @@
-node_modules
-out
+node_modules/
+out/
+dist/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
