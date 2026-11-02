@@ -29,7 +29,18 @@ Local AI Runner is an Electron desktop app for chatting with locally hosted lang
 
 The app does not download models. Install and manage models using your inference server's own tools.
 
-## Current build (1.2.4)
+## Integrated browser and Cowork agent (1.3.0)
+
+Turn on **Inspector → Tools → Browser tools** (this also enables built-in tools), then use Agent mode with a model that supports tool calling.
+
+- **Browser page / dock:** open the Browser page from the sidebar, or dock it beside the chat with the button in the composer.
+- **Plan:** for multi-step requests the agent writes a checklist above the composer. Pause, resume, stop, edit or add steps at any time.
+- **Seeing pages:** the agent reads numbered interactive elements. For visual pages it uses screenshots (needs an image-capable chat model or a vision model selected in Tools).
+- **Safety:** the browser is isolated from the app and from your normal browser. The agent never types passwords or payment details; submits, risky clicks and JavaScript need your approval; page text is treated as untrusted. Use "Clear browser data" to reset cookies and storage.
+
+Limitations: no file uploads or downloads in the browser, no captcha solving, no extensions, and small local models may struggle with long browsing tasks.
+
+## Previous build (1.2.4)
 
 - Fixes sidebar navigation: both the upper Workspace group and lower Connections/Memory/Insights/Help/Settings group now respond to clicks and correctly synchronize active state and translated labels.
 - Refines Projects, Models, Tasks and Settings with one consistent visual system, clearer hierarchy, accessible controls, responsive layouts and visible keyboard focus.

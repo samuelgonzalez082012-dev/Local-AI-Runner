@@ -1,11 +1,12 @@
 'use strict';
 
-const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, WebContentsView, desktopCapturer, dialog, ipcMain, session, shell, safeStorage } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { extractDocument } = require('./services/document-service');
 const { createWorkspaceService } = require('./services/workspace-service');
 const { createMcpService } = require('./services/mcp-service');
+const { createBrowserService } = require('./services/browser-service');
 const { atomicWriteFile } = require('./services/atomic-file');
 
 // Preserve the user-data directory created by the original repository package.
@@ -20,6 +21,7 @@ try {
 let mainWindow = null;
 let workspace = null;
 let connectors = null;
+let browser = null;
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
 
@@ -316,6 +318,37 @@ function configureConnectors() {
   ipcMain.handle('connectors:call',async(event,payload)=>{assertTrustedRenderer(event);return connectors.call(mainWindow,payload||{});});
 }
 
+function configureBrowser() {
+  browser = createBrowserService({ app, dialog, session, WebContentsView, getMainWindow: () => mainWindow });
+  const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => {
+    assertTrustedRenderer(event);
+    return handler(...args);
+  });
+  handle('browser:set-bounds', rect => browser.setBounds(rect));
+  handle('browser:set-visible', value => browser.setVisible(value));
+  handle('browser:set-ask-new-sites', value => browser.setAskNewSites(value));
+  handle('browser:set-agent-active', value => browser.setAgentActive(value));
+  handle('browser:state', () => browser.getState());
+  handle('browser:navigate', url => browser.userNavigate(String(url ?? '').slice(0, 2100)));
+  handle('browser:action', name => browser.userAction(String(name ?? '')));
+  handle('browser:tab', (op, payload) => browser.userTab(String(op ?? ''), payload));
+  handle('browser:clear-data', async () => {
+    const answer = await dialog.showMessageBox(mainWindow, {
+      type: 'warning', buttons: ['Clear browser data', 'Cancel'], cancelId: 1, defaultId: 1, noLink: true,
+      title: 'Clear browser data?', message: 'Clear cookies, sign-ins and cached pages from the integrated browser?',
+      detail: 'This only affects the integrated browser. Your chats, files and settings are not changed.'
+    });
+    if (answer.response !== 0) return false;
+    return browser.clearData();
+  });
+  handle('browser:tool', payload => {
+    if (!payload || typeof payload !== 'object' || typeof payload.name !== 'string' || payload.name.length > 40) throw new Error('Invalid browser tool request.');
+    const args = payload.args && typeof payload.args === 'object' && !Array.isArray(payload.args) ? payload.args : {};
+    if (JSON.stringify(args).length > 20000) throw new Error('Browser tool arguments are too large.');
+    return browser.runTool(payload.name, args);
+  });
+}
+
 function configureScreenCapture() {
   session.defaultSession.setPermissionRequestHandler((webContents,permission,callback)=>{
     callback(permission==='display-capture' && mainWindow && !mainWindow.isDestroyed() && webContents===mainWindow.webContents);
@@ -337,7 +370,7 @@ function createWindow() {
   mainWindow=new BrowserWindow({width:1580,height:980,minWidth:760,minHeight:620,backgroundColor:'#0d1118',show:false,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   const ownerId=mainWindow.webContents.id;
   mainWindow.once('ready-to-show',()=>mainWindow.show());
-  mainWindow.on('closed',()=>{for(const [key,controller] of activeStreams) if(key.startsWith(`${ownerId}:`)) controller.abort();mainWindow=null;});
+  mainWindow.on('closed',()=>{for(const [key,controller] of activeStreams) if(key.startsWith(`${ownerId}:`)) controller.abort();browser?.shutdown();mainWindow=null;});
   mainWindow.webContents.setWindowOpenHandler(({url})=>{
     try {
       const parsed = new URL(url);
@@ -355,6 +388,7 @@ app.whenReady().then(async()=>{
   configureSystemMetrics();
   configureWorkspace();
   configureConnectors();
+  configureBrowser();
   configureScreenCapture();
   await Promise.all([workspace.load(), connectors.load()]);
   createWindow();

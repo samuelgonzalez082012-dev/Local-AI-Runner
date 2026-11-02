@@ -15,6 +15,13 @@ function subscribeStream(id, onPacket) {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 
+function subscribe(channel, callback) {
+  if (typeof callback !== 'function') throw new TypeError('A callback is required.');
+  const listener = (_event, payload) => { try { callback(payload); } catch (error) { console.error(error); } };
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
 contextBridge.exposeInMainWorld('localAI', Object.freeze({
   request(options) { return ipcRenderer.invoke('local-ai:request', options); },
   approveServer(baseUrl) { return ipcRenderer.invoke('local-ai:approve-server', baseUrl); },
@@ -48,5 +55,20 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     list() { return ipcRenderer.invoke('connectors:list'); },
     remove(id) { return ipcRenderer.invoke('connectors:remove', id); },
     call(payload) { return ipcRenderer.invoke('connectors:call', payload); }
+  }),
+  browser: Object.freeze({
+    setBounds(rect) { return ipcRenderer.invoke('browser:set-bounds', rect); },
+    setVisible(value) { return ipcRenderer.invoke('browser:set-visible', !!value); },
+    setAskNewSites(value) { return ipcRenderer.invoke('browser:set-ask-new-sites', !!value); },
+    setAgentActive(value) { return ipcRenderer.invoke('browser:set-agent-active', !!value); },
+    state() { return ipcRenderer.invoke('browser:state'); },
+    navigate(url) { return ipcRenderer.invoke('browser:navigate', String(url == null ? '' : url)); },
+    action(name) { return ipcRenderer.invoke('browser:action', String(name || '')); },
+    tab(op, payload) { return ipcRenderer.invoke('browser:tab', String(op || ''), payload); },
+    clearData() { return ipcRenderer.invoke('browser:clear-data'); },
+    tool(name, args) { return ipcRenderer.invoke('browser:tool', { name: String(name || ''), args: args || {} }); },
+    onState(callback) { return subscribe('browser:state', callback); },
+    onActivity(callback) { return subscribe('browser:activity', callback); },
+    onReveal(callback) { return subscribe('browser:reveal', callback); }
   })
 }));

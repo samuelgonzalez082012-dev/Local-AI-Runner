@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0 — Integrated browser and Cowork-style agent
+
+- Added an integrated browser (Electron WebContentsView in an isolated `persist:agent-browser` session with no preload). Use it full size from the new Browser page or docked beside the chat.
+- Added 15 `browser_*` agent tools: navigate, get_dom, click, type, select, press_key, scroll, get_text, screenshot, execute_js, new_tab, close_tab, switch_tab, list_tabs and wait. Pages are read as numbered interactive elements (Set-of-Marks) that are also drawn on the page, with a visible agent cursor and glow border. Clicks and keys use real input events.
+- Screenshots go to the chat model when it supports images, or to a separate vision model chosen in Inspector → Tools. Canvas-only pages fall back to a screenshot automatically.
+- Added a Cowork-style plan: the agent writes a visible checklist (`update_plan`, `complete_step`) above the composer. You can pause, resume, stop, edit steps and add steps while it works.
+- Safety: web content is wrapped as untrusted data; passwords, payment and one-time-code fields are never filled by the agent; form submits, Enter in forms, risky clicks and JavaScript execution need approval; private-network addresses always need approval; new sites ask first while the agent is active (optional); permissions and downloads are denied; file:// and javascript: URLs are blocked. "Clear browser data" is in Tools.
+- Agent step limit is now configurable (default 25, was 12) and a time limit counts only active, unpaused time.
+- Added unit tests for URL policy, click-risk and sensitive-field rules, plus `npm run smoke`, an Electron end-to-end browser test (27 checks).
+- New interface text for these features is English only for now.
+
 ## 1.2.4 — Sidebar navigation fix
 
 - Fixed the bottom sidebar navigation group so Connections, Memory, Insights, Help & guides, and Settings respond to clicks just like Chats, Projects, Models and Tasks.
