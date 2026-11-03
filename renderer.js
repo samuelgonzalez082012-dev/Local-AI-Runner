@@ -935,52 +935,8 @@
     return output;
   }
 
-  function toAnthropicWire(messages) {
-    const systemParts = [];
-    const output = [];
-    const append = (role, blocks) => {
-      if (!blocks.length) return;
-      const previous = output[output.length - 1];
-      if (previous?.role === role && Array.isArray(previous.content)) previous.content.push(...blocks);
-      else output.push({ role, content: blocks });
-    };
-    for (const message of messages) {
-      if (message.role === 'system') {
-        if (message.content) systemParts.push(String(message.content));
-        continue;
-      }
-      if (message.role === 'user') {
-        const blocks = [];
-        if (message.content) blocks.push({ type: 'text', text: String(message.content) });
-        for (const image of message.images || []) {
-          const match = /^data:(image\/(?:jpeg|png|gif|webp));base64,([a-zA-Z0-9+/=]+)$/.exec(String(image || ''));
-          if (match) blocks.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } });
-        }
-        append('user', blocks.length ? blocks : [{ type: 'text', text: ' ' }]);
-        continue;
-      }
-      if (message.role === 'assistant') {
-        const blocks = [];
-        if (message.content) blocks.push({ type: 'text', text: String(message.content) });
-        for (const call of message.tool_calls || []) {
-          blocks.push({ type: 'tool_use', id: String(call.id || uid()), name: String(call.name), input: call.args && typeof call.args === 'object' && !Array.isArray(call.args) ? call.args : {} });
-        }
-        append('assistant', blocks.length ? blocks : [{ type: 'text', text: ' ' }]);
-        continue;
-      }
-      if (message.role === 'tool') {
-        append('user', [{
-          type: 'tool_result',
-          tool_use_id: String(message.tool_call_id || ''),
-          content: String(message.content || '')
-        }]);
-      }
-    }
-    return { system: systemParts.join('\n\n'), messages: output };
-  }
-
   function toWire(messages) {
-    if (settings.backend === 'anthropic') return toAnthropicWire(messages);
+    if (settings.backend === 'anthropic') return window.LocalAIAnthropicAdapter.toWire(messages, uid);
     if (settings.backend === 'ollama') {
       return messages.map(message => {
         if (message.role === 'user') {
@@ -1600,7 +1556,7 @@
   const TOOL_PROVIDER_ADAPTERS = {
     ollama(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; },
     openai(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; },
-    anthropic(definition) { return { name: definition.name, description: definition.description, input_schema: definition.parameters }; }
+    anthropic(definition) { return window.LocalAIAnthropicAdapter.toolDefinition(definition); }
   };
   async function activeToolDefinitions(model, agentMode) {
     if (!settings.toolsEnabled) { await window.localAI.tools.register([]); return { definitions:[], remoteMap:new Map(), fallbackPrompt:'', fallbackNames:null }; }
@@ -1697,7 +1653,7 @@
           ...(settings.maxTokens > 0 ? { num_predict: settings.maxTokens } : {})
         }, ...(tools.length ? { tools } : {}) }
       : settings.backend === 'anthropic'
-        ? { model, max_tokens: settings.maxTokens > 0 ? settings.maxTokens : 4096, messages: wireMessages.messages, ...(wireMessages.system ? { system: wireMessages.system } : {}), temperature: settings.temp, stream: true, ...(tools.length ? { tools } : {}) }
+        ? { model, max_tokens: settings.maxTokens > 0 ? settings.maxTokens : 4096, messages: wireMessages.messages, ...(wireMessages.system ? { system: wireMessages.system } : {}), stream: true, ...(tools.length ? { tools } : {}) }
         : { model, messages: wireMessages, stream: true, temperature: settings.temp, top_p: settings.topP,
             ...(settings.maxTokens > 0 ? { max_tokens: settings.maxTokens } : {}), ...(tools.length ? { tools } : {}) };
     if (settings.backend === 'ollama') {
