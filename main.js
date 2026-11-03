@@ -327,6 +327,19 @@ function configureBrowser() {
   handle('browser:set-bounds', rect => browser.setBounds(rect));
   handle('browser:set-visible', value => browser.setVisible(value));
   handle('browser:set-ask-new-sites', value => browser.setAskNewSites(value));
+  handle('browser:set-auto-approve', async (value, ask) => {
+    if (value && ask === true) {
+      const answer = await dialog.showMessageBox(mainWindow, {
+        type: 'warning', buttons: ['Turn on auto-approve', 'Cancel'], cancelId: 1, defaultId: 1, noLink: true,
+        title: 'Turn on auto-approve?',
+        message: 'Let the AI submit forms, click buttons, run page scripts and visit new sites without asking?',
+        detail: 'Websites can contain text meant to trick an AI into acting against you. With auto-approve on, nothing stops such an action except the rules that always apply: passwords, payment and one-time-code fields are never filled, and addresses on your own network still ask first. Use it for trusted tasks such as games, and turn it off afterwards.'
+      });
+      if (answer.response !== 0) return false;
+    }
+    return browser.setAutoApprove(!!value) && !!value;
+  });
+  handle('browser:interrupt', () => browser.interrupt());
   handle('browser:set-agent-active', value => browser.setAgentActive(value));
   handle('browser:state', () => browser.getState());
   handle('browser:navigate', url => browser.userNavigate(String(url ?? '').slice(0, 2100)));

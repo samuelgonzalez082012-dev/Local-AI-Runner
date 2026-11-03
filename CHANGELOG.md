@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 — Game-speed browser and auto-approve
+
+- Added **Auto-approve browser actions** (Inspector → Tools). When on, the assistant does not ask before submitting forms, clicking risky buttons, running page scripts or visiting new public sites. Turning it on shows a warning first. Passwords, payment and one-time-code fields are still never filled, and addresses on your own network still ask.
+- New fast tools for games and quick pages: `browser_keys` (timed key sequences with held keys, real input), `browser_mouse` (move, click, double, drag, wheel at page coordinates), `browser_look` (small fast screenshots, up to 4 frames to show motion, optional zoom region) and `browser_reflex`.
+- `browser_reflex` runs a small script inside the page every animation frame, so reactions take milliseconds instead of a model round trip. The script can press keys, click, and read canvas pixels; it runs in the background with status, stop and a time limit, and is stopped by the Stop button or when the task ends.
+- The agent guide now teaches the look → act in bursts → write a reflex workflow.
+- Maximum agent steps can now be set up to 300.
+- Fixed a rare race where typing into a field could append to the old text instead of replacing it.
+- Tests: 14 unit tests and 57 Electron browser checks, including key timing, mouse coordinates, frame capture, reflex pixel reading, interrupt and auto-approve.
+
 ## 1.3.0 — Integrated browser and Cowork-style agent
 
 - Added an integrated browser (Electron WebContentsView in an isolated `persist:agent-browser` session with no preload). Use it full size from the new Browser page or docked beside the chat.

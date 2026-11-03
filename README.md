@@ -38,6 +38,8 @@ Turn on **Inspector → Tools → Browser tools** (this also enables built-in to
 - **Seeing pages:** the agent reads numbered interactive elements. For visual pages it uses screenshots (needs an image-capable chat model or a vision model selected in Tools).
 - **Safety:** the browser is isolated from the app and from your normal browser. The agent never types passwords or payment details; submits, risky clicks and JavaScript need your approval; page text is treated as untrusted. Use "Clear browser data" to reset cookies and storage.
 
+**Games and fast pages (1.4.0):** the assistant can look with small fast screenshots, send timed key sequences and coordinate mouse input, and start a *reflex*, a short script that runs inside the page every frame. A model still needs a second or more per decision, so real-time play works by the model learning the game and then writing a reflex that reacts at frame speed. It works best on games that expose their state in the page or have clear colours on a canvas. Turn on **Auto-approve browser actions** in Tools to stop approval prompts; leave it off for untrusted sites.
+
 Limitations: no file uploads or downloads in the browser, no captcha solving, no extensions, and small local models may struggle with long browsing tasks.
 
 ## Previous build (1.2.4)

@@ -91,6 +91,43 @@ function isSensitiveField(desc) {
   return SENSITIVE_FIELD.test([d.name, d.id, d.label].filter(Boolean).join(' '));
 }
 
+const GAME_KEY_NAMES = { enter: 'Return', return: 'Return', tab: 'Tab', escape: 'Escape', esc: 'Escape', backspace: 'Backspace', delete: 'Delete', arrowup: 'Up', arrowdown: 'Down', arrowleft: 'Left', arrowright: 'Right', up: 'Up', down: 'Down', left: 'Left', right: 'Right', home: 'Home', end: 'End', pageup: 'PageUp', pagedown: 'PageDown', space: 'Space', ' ': 'Space', shift: 'Shift', control: 'Control', ctrl: 'Control', alt: 'Alt' };
+const MAX_KEY_STEPS = 200;
+const MAX_KEY_TOTAL_MS = 20_000;
+
+function resolveKeyCode(key) {
+  const raw = String(key == null ? '' : key);
+  const lower = raw.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(GAME_KEY_NAMES, lower)) return GAME_KEY_NAMES[lower];
+  if (/^f([1-9]|1[0-2])$/i.test(raw)) return raw.toUpperCase();
+  if (raw.length === 1) return raw.toLowerCase();
+  throw new Error(`Unsupported key “${raw}”. Use a single letter, digit or symbol, or one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End, PageUp, PageDown, Space, Shift, Control, Alt, F1–F12.`);
+}
+
+// Turns the model's compact key list into validated steps with timing.
+// A step is "ArrowLeft", or { key, action: tap|down|up, hold_ms, wait_ms }, or { wait_ms }.
+function parseKeySteps(input) {
+  if (!Array.isArray(input) || input.length === 0) throw new Error('steps must be a non-empty list, for example ["ArrowLeft", {"key":"Space","hold_ms":120}, {"wait_ms":50}].');
+  if (input.length > MAX_KEY_STEPS) throw new Error(`At most ${MAX_KEY_STEPS} steps per call.`);
+  const steps = [];
+  let total = 0;
+  for (const item of input) {
+    const step = typeof item === 'string' ? { key: item } : (item && typeof item === 'object' ? item : null);
+    if (!step) throw new Error('Each step must be a key name or an object.');
+    const wait = Math.min(Math.max(Math.round(Number(step.wait_ms) || 0), 0), 5000);
+    if (step.key === undefined || step.key === null || step.key === '') {
+      if (!wait) throw new Error('A step needs a key or a wait_ms.');
+      steps.push({ code: null, action: 'wait', hold: 0, wait }); total += wait; continue;
+    }
+    const action = ['tap', 'down', 'up'].includes(step.action) ? step.action : 'tap';
+    const hold = action === 'tap' ? Math.min(Math.max(Math.round(step.hold_ms === undefined ? 30 : Number(step.hold_ms) || 0), 0), 5000) : 0;
+    steps.push({ code: resolveKeyCode(step.key), key: String(step.key), action, hold, wait });
+    total += hold + wait;
+  }
+  if (total > MAX_KEY_TOTAL_MS) throw new Error(`The sequence would take ${Math.round(total / 1000)} seconds; keep it under ${MAX_KEY_TOTAL_MS / 1000}. Send shorter sequences and look again between them.`);
+  return { steps, totalMs: total };
+}
+
 function truncate(text, max) {
   const value = String(text == null ? '' : text);
   return value.length > max ? `${value.slice(0, max)}… [truncated ${value.length - max} characters]` : value;
@@ -347,6 +384,98 @@ const LIB_SOURCE = `(${pageLibrary.toString()})();`;
 
 /* ------------------------------------------------------------------ service */
 
+const MAX_REFLEX_CHARS = 6000;
+const REFLEX_KEY = "Symbol.for('lar.reflex')";
+const REFLEX_STATUS = `(() => { const r = window[${REFLEX_KEY}]; if (!r) return { running: false, note: 'No reflex has been started on this page.' }; return r.snapshot(); })()`;
+const REFLEX_STOP = `(() => { const r = window[${REFLEX_KEY}]; if (!r) return { running: false, note: 'No reflex was running.' }; r.stop('stopped'); return r.snapshot(); })()`;
+
+function buildReflexSource(code, intervalMs, durationMs) {
+  return `(() => {
+  const SLOT = ${REFLEX_KEY};
+  try { const previous = window[SLOT]; if (previous && previous.running()) previous.stop('replaced'); } catch (_) {}
+  const KEYS = { arrowleft: ['ArrowLeft', 'ArrowLeft', 37], arrowup: ['ArrowUp', 'ArrowUp', 38], arrowright: ['ArrowRight', 'ArrowRight', 39], arrowdown: ['ArrowDown', 'ArrowDown', 40], left: ['ArrowLeft', 'ArrowLeft', 37], up: ['ArrowUp', 'ArrowUp', 38], right: ['ArrowRight', 'ArrowRight', 39], down: ['ArrowDown', 'ArrowDown', 40], space: [' ', 'Space', 32], enter: ['Enter', 'Enter', 13], escape: ['Escape', 'Escape', 27], shift: ['Shift', 'ShiftLeft', 16], control: ['Control', 'ControlLeft', 17], ctrl: ['Control', 'ControlLeft', 17], alt: ['Alt', 'AltLeft', 18], tab: ['Tab', 'Tab', 9] };
+  const info = name => {
+    const raw = String(name); const hit = KEYS[raw.toLowerCase()];
+    if (hit) return { key: hit[0], code: hit[1], kc: hit[2] };
+    if (/^[a-z]$/i.test(raw)) return { key: raw, code: 'Key' + raw.toUpperCase(), kc: raw.toUpperCase().charCodeAt(0) };
+    if (/^[0-9]$/.test(raw)) return { key: raw, code: 'Digit' + raw, kc: raw.charCodeAt(0) };
+    return { key: raw, code: raw, kc: raw.length === 1 ? raw.toUpperCase().charCodeAt(0) : 0 };
+  };
+  const held = new Set();
+  const fire = (type, name) => {
+    const i = info(name);
+    const ev = new KeyboardEvent(type, { key: i.key, code: i.code, bubbles: true, cancelable: true, composed: true });
+    try { Object.defineProperty(ev, 'keyCode', { get: () => i.kc }); Object.defineProperty(ev, 'which', { get: () => i.kc }); } catch (_) {}
+    (document.activeElement || document.body || document).dispatchEvent(ev);
+  };
+  const pointer = (type, x, y) => {
+    const target = document.elementFromPoint(x, y) || document.body;
+    target.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true, view: window, button: 0, buttons: type === 'mouseup' || type === 'click' ? 0 : 1 }));
+  };
+  let sample = null;
+  const readPixels = (x, y, w, h) => {
+    try {
+      const source = document.querySelector('canvas');
+      if (!source) return null;
+      const r = source.getBoundingClientRect();
+      const sx = source.width / (r.width || 1); const sy = source.height / (r.height || 1);
+      if (!sample) sample = document.createElement('canvas');
+      sample.width = w; sample.height = h;
+      const ctx = sample.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(source, (x - r.left) * sx, (y - r.top) * sy, w * sx, h * sy, 0, 0, w, h);
+      return ctx.getImageData(0, 0, w, h).data;
+    } catch (_) { return null; }
+  };
+  const logs = [];
+  const mem = {};
+  const run = { ticks: 0, started: performance.now(), state: 'running', reason: '', error: '', result: undefined, handle: 0, last: 0 };
+  const api = {
+    mem,
+    key(name, mode) { if (mode === 'down') { held.add(String(name)); fire('keydown', name); } else if (mode === 'up') { held.delete(String(name)); fire('keyup', name); } else { fire('keydown', name); fire('keyup', name); } },
+    down(name) { if (!held.has(String(name))) { held.add(String(name)); fire('keydown', name); } },
+    up(name) { if (held.delete(String(name))) fire('keyup', name); },
+    release() { for (const name of [...held]) { held.delete(name); fire('keyup', name); } },
+    click(x, y) { pointer('mousemove', x, y); pointer('mousedown', x, y); pointer('mouseup', x, y); pointer('click', x, y); },
+    move(x, y) { pointer('mousemove', x, y); },
+    pixel(x, y) { const d = readPixels(Math.round(x), Math.round(y), 1, 1); return d ? [d[0], d[1], d[2], d[3]] : null; },
+    pixels(x, y, w, h) { w = Math.min(Math.max(Math.round(w), 1), 256); h = Math.min(Math.max(Math.round(h), 1), 256); return readPixels(Math.round(x), Math.round(y), w, h); },
+    canvas() { return document.querySelector('canvas'); },
+    log(...parts) { if (logs.length >= 100) logs.shift(); logs.push(parts.map(p => { try { return typeof p === 'string' ? p : JSON.stringify(p); } catch (_) { return String(p); } }).join(' ').slice(0, 200)); },
+    stop(result) { finish('stopped by script', '', result); }
+  };
+  function finish(reason, error, result) {
+    if (run.state !== 'running') return;
+    run.state = 'finished'; run.reason = reason; if (error) run.error = error; if (result !== undefined) run.result = result;
+    if (run.mode === 'raf') cancelAnimationFrame(run.handle); else clearInterval(run.handle);
+    try { api.release(); } catch (_) {}
+  }
+  const fn = function (api, t, dt) {
+${code}
+  };
+  const tick = now => {
+    if (run.state !== 'running') return;
+    const t = now - run.started;
+    if (t > ${Number(durationMs)}) { finish('duration reached'); return; }
+    run.ticks++;
+    try { fn(api, t, now - (run.last || now)); } catch (error) { finish('error', String(error && error.message || error)); return; }
+    run.last = now;
+    if (run.mode === 'raf' && run.state === 'running') run.handle = requestAnimationFrame(tick);
+  };
+  window[SLOT] = {
+    running: () => run.state === 'running',
+    stop: reason => finish(reason || 'stopped'),
+    snapshot: () => {
+      const elapsed = Math.round(performance.now() - run.started);
+      let value = run.result; try { value = value === undefined ? undefined : JSON.parse(JSON.stringify(value)); } catch (_) { value = String(value); }
+      return { running: run.state === 'running', ticks: run.ticks, elapsed_ms: elapsed, ticks_per_second: elapsed ? Math.round(run.ticks * 1000 / elapsed) : 0, ended: run.reason || undefined, error: run.error || undefined, result: value, held_keys: [...held], log: logs.slice(-30) };
+    }
+  };
+  if (${Number(intervalMs)} > 0) { run.mode = 'interval'; run.handle = setInterval(() => tick(performance.now()), ${Number(intervalMs)}); }
+  else { run.mode = 'raf'; run.handle = requestAnimationFrame(tick); }
+  return { started: true, mode: run.mode === 'raf' ? 'every animation frame' : 'every ${Number(intervalMs)} ms', max_seconds: ${Math.round(Number(durationMs) / 1000)} };
+})()`;
+}
+
 function createBrowserService({ app, dialog, session, WebContentsView, getMainWindow, options = {} }) {
   const tabs = new Map();
   let order = [];
@@ -361,7 +490,8 @@ function createBrowserService({ app, dialog, session, WebContentsView, getMainWi
   let stateTimer = null;
   let queue = Promise.resolve();
   const approvedOrigins = new Set();
-  const settings = { askNewSites: options.askNewSites !== false };
+  const settings = { askNewSites: options.askNewSites !== false, autoApprove: options.autoApprove === true };
+  let interruptToken = 0;
 
   /* ---------- plumbing ---------- */
   const window_ = () => { const w = getMainWindow(); return w && !w.isDestroyed() ? w : null; };
@@ -397,7 +527,7 @@ function createBrowserService({ app, dialog, session, WebContentsView, getMainWi
       activeId,
       canGoBack: !!(history && history.canGoBack()),
       canGoForward: !!(history && history.canGoForward()),
-      agentActive, visible, askNewSites: settings.askNewSites
+      agentActive, visible, askNewSites: settings.askNewSites, autoApprove: settings.autoApprove
     };
   }
   function emitState() {
@@ -431,6 +561,7 @@ function createBrowserService({ app, dialog, session, WebContentsView, getMainWi
   async function approveOrigin(v) {
     const w = window_();
     if (!w) return false;
+    if (settings.autoApprove && !v.isPrivate) { approvedOrigins.add(v.origin); activity(`Auto-approved visiting ${v.origin}`); return true; }
     const answer = await dialog.showMessageBox(w, {
       type: v.isPrivate ? 'warning' : 'question', buttons: ['Allow for this session', 'Block'], cancelId: 1, defaultId: 1, noLink: true,
       title: 'Allow the AI to open this site?',
@@ -447,6 +578,7 @@ function createBrowserService({ app, dialog, session, WebContentsView, getMainWi
   async function approveAction({ title, message, detail }) {
     const w = window_();
     if (!w) return false;
+    if (settings.autoApprove) { activity(`Auto-approved: ${title.replace(/\?$/, '')}`); return true; }
     const answer = await dialog.showMessageBox(w, {
       type: 'question', buttons: ['Allow', 'Decline'], cancelId: 1, defaultId: 1, noLink: true,
       title, message, detail
@@ -651,7 +783,12 @@ function createBrowserService({ app, dialog, session, WebContentsView, getMainWi
       await moveCursor(wc, info.x, info.y);
       sendClick(wc, info.x, info.y);
       await sleep(120);
-      if (args.clear !== false) { wc.selectAll(); if (!text) { sendKey(wc, 'Backspace'); } }
+      if (args.clear !== false) {
+        // Select through the page first: the native selectAll can run before focus has settled after the click.
+        const selected = await wc.executeJavaScript("(()=>{const e=document.activeElement;if(e&&(e.tagName==='INPUT'||e.tagName==='TEXTAREA')&&typeof e.select==='function'){e.focus();e.select();return true;}return false;})()", true).catch(() => false);
+        if (!selected) wc.selectAll();
+        if (!text) { sendKey(wc, 'Backspace'); }
+      }
       if (text) wc.insertText(text);
       await sleep(120);
       activity(`Typed into [${index}] ${info.desc.label || info.desc.tag}`);
@@ -766,6 +903,145 @@ function createBrowserService({ app, dialog, session, WebContentsView, getMainWi
       return { result: truncate(text, 8000) };
     },
 
+    // ---- fast game-play tools: no cursor animation, no settle waits ----
+    async keys(args) {
+      await ensureVisible();
+      const wc = activeWc();
+      const { steps, totalMs } = parseKeySteps(args.steps);
+      if (steps.some(step => step.code === 'Return')) {
+        const active = await page(wc, 'describeActive()');
+        if (active && active.desc && active.inForm) {
+          const ok = await approveAction({ title: 'Approve pressing Enter?', message: 'Press Enter inside a form?', detail: `This may submit the form.\nPage: ${wc.getURL()}` });
+          if (!ok) throw new Error('The user declined. Do not retry; ask the user how to continue.');
+        }
+      }
+      const token = interruptToken;
+      const held = new Set();
+      const started = Date.now();
+      let done = 0;
+      activity(`Keys: ${steps.filter(step => step.key).slice(0, 6).map(step => step.key).join(' ')}${steps.length > 6 ? '…' : ''}`);
+      wc.focus();
+      try {
+        for (const step of steps) {
+          if (token !== interruptToken) break;
+          if (step.action === 'wait') { await sleep(step.wait); done++; continue; }
+          const down = () => { wc.sendInputEvent({ type: 'keyDown', keyCode: step.code }); if (step.code.length === 1 || step.code === 'Space' || step.code === 'Return') wc.sendInputEvent({ type: 'char', keyCode: step.code === 'Space' ? ' ' : (step.code === 'Return' ? '\r' : step.code) }); };
+          const up = () => wc.sendInputEvent({ type: 'keyUp', keyCode: step.code });
+          if (step.action === 'down') { down(); held.add(step.code); }
+          else if (step.action === 'up') { up(); held.delete(step.code); }
+          else { down(); if (step.hold) await sleep(step.hold); up(); }
+          if (step.wait) await sleep(step.wait);
+          done++;
+        }
+      } finally {
+        for (const code of held) { try { wc.sendInputEvent({ type: 'keyUp', keyCode: code }); } catch (_) { /* ignore */ } }
+      }
+      return { steps: done, of: steps.length, planned_ms: totalMs, elapsed_ms: Date.now() - started, interrupted: token !== interruptToken, held_released: held.size };
+    },
+
+    async mouse(args) {
+      await ensureVisible();
+      const wc = activeWc();
+      const action = String(args.action || 'click');
+      if (!['move', 'click', 'double', 'down', 'up', 'drag', 'wheel'].includes(action)) throw new Error('action must be move, click, double, down, up, drag or wheel.');
+      const coord = (value, name, max) => {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 0 || n > max) throw new Error(`${name} must be a number from 0 to ${Math.max(0, Math.floor(max))} (page pixels from the top-left of the browser view).`);
+        return Math.round(n);
+      };
+      const x = coord(args.x, 'x', bounds.width);
+      const y = coord(args.y, 'y', bounds.height);
+      const button = ['left', 'right', 'middle'].includes(args.button) ? args.button : 'left';
+      wc.focus();
+      if (['click', 'double', 'down', 'drag'].includes(action) && !settings.autoApprove) {
+        const desc = await wc.executeJavaScript(`(()=>{const e=document.elementFromPoint(${x},${y});if(!e)return null;if(e.tagName==='CANVAS')return {tag:'canvas'};const c=e.closest('a,button,input,[role=button],summary')||e;const label=(c.getAttribute('aria-label')||c.innerText||c.value||c.title||'').trim().slice(0,80);return {tag:c.tagName.toLowerCase(),type:c.type||'',role:c.getAttribute('role')||'',label,inForm:!!c.closest('form')};})()`, true).catch(() => null);
+        const risk = classifyClickRisk(desc);
+        if (risk.risky) {
+          const ok = await approveAction({ title: 'Approve this click?', message: `Click “${(desc && desc.label) || (desc && desc.tag)}”?`, detail: `This ${risk.reason}.\nPage: ${wc.getURL()}` });
+          if (!ok) throw new Error('The user declined this click. Do not retry it; explain what you need or ask the user.');
+        }
+      }
+      const clicks = action === 'double' ? 2 : 1;
+      const started = Date.now();
+      if (action === 'move') wc.sendInputEvent({ type: 'mouseMove', x, y });
+      else if (action === 'wheel') {
+        wc.sendInputEvent({ type: 'mouseMove', x, y });
+        wc.sendInputEvent({ type: 'mouseWheel', x, y, deltaX: -Math.max(-2000, Math.min(2000, Math.round(Number(args.delta_x) || 0))), deltaY: -Math.max(-2000, Math.min(2000, Math.round(Number(args.delta_y) || 0))) });
+        await sleep(30); // Electron's wheel deltas point the opposite way to the DOM's; negated so positive means scroll down
+      } else if (action === 'down') { wc.sendInputEvent({ type: 'mouseMove', x, y }); wc.sendInputEvent({ type: 'mouseDown', x, y, button, clickCount: 1 }); }
+      else if (action === 'up') { wc.sendInputEvent({ type: 'mouseMove', x, y }); wc.sendInputEvent({ type: 'mouseUp', x, y, button, clickCount: 1 }); }
+      else if (action === 'drag') {
+        const tx = coord(args.to_x, 'to_x', bounds.width);
+        const ty = coord(args.to_y, 'to_y', bounds.height);
+        const count = Math.min(Math.max(Math.round(Number(args.steps) || 12), 2), 60);
+        const duration = Math.min(Math.max(Math.round(Number(args.duration_ms) || 200), 0), 3000);
+        wc.sendInputEvent({ type: 'mouseMove', x, y });
+        wc.sendInputEvent({ type: 'mouseDown', x, y, button, clickCount: 1 });
+        for (let i = 1; i <= count; i++) {
+          wc.sendInputEvent({ type: 'mouseMove', x: Math.round(x + (tx - x) * i / count), y: Math.round(y + (ty - y) * i / count) });
+          if (duration) await sleep(duration / count);
+        }
+        wc.sendInputEvent({ type: 'mouseUp', x: tx, y: ty, button, clickCount: 1 });
+      } else {
+        wc.sendInputEvent({ type: 'mouseMove', x, y });
+        for (let i = 1; i <= clicks; i++) { wc.sendInputEvent({ type: 'mouseDown', x, y, button, clickCount: i }); wc.sendInputEvent({ type: 'mouseUp', x, y, button, clickCount: i }); }
+      }
+      activity(`Mouse ${action} at ${x},${y}`);
+      return { action, x, y, elapsed_ms: Date.now() - started, viewport: { width: Math.round(bounds.width), height: Math.round(bounds.height) } };
+    },
+
+    async look(args) {
+      await ensureVisible();
+      const wc = activeWc();
+      const width = Math.min(Math.max(Math.round(Number(args.width) || 640), 160), 1280);
+      const quality = Math.min(Math.max(Math.round(Number(args.quality) || 55), 30), 85);
+      const frames = Math.min(Math.max(Math.round(Number(args.frames) || 1), 1), 4);
+      const gap = Math.min(Math.max(Math.round(args.interval_ms === undefined ? 100 : Number(args.interval_ms) || 0), 0), 1000);
+      let rect;
+      if (args.region && typeof args.region === 'object') {
+        rect = { x: Math.max(0, Math.round(Number(args.region.x) || 0)), y: Math.max(0, Math.round(Number(args.region.y) || 0)), width: Math.max(8, Math.round(Number(args.region.width) || 0)), height: Math.max(8, Math.round(Number(args.region.height) || 0)) };
+        if (!(rect.width >= 8 && rect.height >= 8)) rect = undefined;
+      }
+      const started = Date.now();
+      await wc.executeJavaScript('window.__larAgent&&window.__larAgent.chrome(false)', true).catch(() => {});
+      const out = [];
+      let size = { width: 0, height: 0 };
+      try {
+        for (let i = 0; i < frames; i++) {
+          const at = Date.now();
+          let image = rect ? await wc.capturePage(rect) : await wc.capturePage();
+          if (!image || image.isEmpty()) throw new Error('The browser did not produce an image. Make sure the browser panel is visible.');
+          if (image.getSize().width > width) image = image.resize({ width, quality: 'good' });
+          size = image.getSize();
+          out.push(`data:image/jpeg;base64,${image.toJPEG(quality).toString('base64')}`);
+          if (i < frames - 1 && gap) await sleep(Math.max(0, gap - (Date.now() - at)));
+        }
+      } finally { await wc.executeJavaScript('window.__larAgent&&window.__larAgent.chrome(true)', true).catch(() => {}); }
+      return { frames: out, width: size.width, height: size.height, elapsed_ms: Date.now() - started, viewport: { width: Math.round(bounds.width), height: Math.round(bounds.height) }, ...pageInfo(wc) };
+    },
+
+    // A small program that runs inside the page at frame rate, so reactions do not wait for the model.
+    async reflex(args) {
+      await ensureVisible();
+      const wc = activeWc();
+      const action = String(args.action || 'start');
+      if (action === 'status') return { ...(await wc.executeJavaScript(REFLEX_STATUS, true)), ...pageInfo(wc) };
+      if (action === 'stop') return { ...(await wc.executeJavaScript(REFLEX_STOP, true)), ...pageInfo(wc) };
+      if (action !== 'start') throw new Error('action must be start, status or stop.');
+      const code = String(args.code || '');
+      if (!code.trim()) throw new Error('code is required to start a reflex.');
+      if (code.length > MAX_REFLEX_CHARS) throw new Error(`Reflex code is limited to ${MAX_REFLEX_CHARS} characters.`);
+      const interval = Number(args.interval_ms) > 0 ? Math.min(Math.max(Math.round(Number(args.interval_ms)), 4), 1000) : 0;
+      const duration = Math.min(Math.max(Math.round(Number(args.duration_ms) || 30_000), 500), 120_000);
+      const ok = await approveAction({ title: 'Approve a game-speed script?', message: 'Run this script repeatedly inside the current page?', detail: `It can press keys and click in the page for up to ${Math.round(duration / 1000)} seconds.\nPage: ${wc.getURL()}\n\n${truncate(code, 1500)}` });
+      if (!ok) throw new Error('The user declined to run this script.');
+      activity(`Reflex loop started (${interval ? `every ${interval} ms` : 'every frame'}, up to ${Math.round(duration / 1000)} s)`);
+      let result;
+      try { result = await wc.executeJavaScript(buildReflexSource(code, interval, duration), true); }
+      catch (error) { throw new Error(`The script could not start: ${String(error && error.message || error).slice(0, 300)}`); }
+      return { ...result, ...pageInfo(wc) };
+    },
+
     async new_tab(args) {
       await ensureVisible();
       const id = createTab();
@@ -812,6 +1088,15 @@ function createBrowserService({ app, dialog, session, WebContentsView, getMainWi
     },
     setVisible(value) { visible = !!value; applyAttachment(); emitState(); return true; },
     setAskNewSites(value) { settings.askNewSites = !!value; emitState(); return true; },
+    setAutoApprove(value) { settings.autoApprove = !!value; emitState(); return true; },
+    interrupt() {
+      interruptToken++;
+      for (const t of tabs.values()) {
+        const wc = t.view && t.view.webContents;
+        if (wc && !wc.isDestroyed()) wc.executeJavaScript(REFLEX_STOP, true).catch(() => {});
+      }
+      return true;
+    },
     setAgentActive(value) {
       agentActive = !!value;
       clearTimeout(agentTimer);
@@ -872,6 +1157,6 @@ function createBrowserService({ app, dialog, session, WebContentsView, getMainWi
 module.exports = {
   createBrowserService,
   validateNavigationUrl, isPrivateHost, classifyClickRisk, isSensitiveField,
-  normalizeBounds, formatMarksList, formatDomReport, truncate,
+  normalizeBounds, formatMarksList, formatDomReport, truncate, parseKeySteps, resolveKeyCode,
   PARTITION, LIB_SOURCE
 };

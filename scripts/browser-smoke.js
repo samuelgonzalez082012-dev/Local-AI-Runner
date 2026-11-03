@@ -30,12 +30,26 @@ const FORM_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Smoke
   <button type="submit">Place order</button>
 </form></body></html>`;
 
+const GAME_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Game</title></head>
+<body style="margin:0;background:#111"><canvas id="c" width="200" height="200" style="position:fixed;left:0;top:0"></canvas>
+<script>
+const ctx = document.getElementById('c').getContext('2d'); ctx.fillStyle = 'rgb(255,0,0)'; ctx.fillRect(0, 0, 200, 200);
+window.events = [];
+const add = (type, e) => window.events.push({ type, key: e.key, code: e.code, kc: e.keyCode, x: e.clientX, y: e.clientY, dy: e.deltaY, trusted: e.isTrusted, t: performance.now() });
+for (const t of ['keydown', 'keyup']) window.addEventListener(t, e => add(t, e));
+for (const t of ['mousedown', 'mouseup', 'click']) window.addEventListener(t, e => add(t, e));
+window.addEventListener('wheel', e => add('wheel', e));
+</script></body></html>`;
+const DANGER_PAGE = `<!doctype html><title>Danger</title><body style="margin:0"><form action="/danger-submit" method="get"><button type="submit" style="position:fixed;left:0;top:0;width:300px;height:120px">Place order</button></form></body>`;
+
 (async () => {
   const hits = [];
   const server = http.createServer((req, res) => {
     hits.push(req.url);
     res.setHeader('content-type', 'text/html; charset=utf-8');
     if (req.url.startsWith('/submit')) return res.end('<!doctype html><title>Submitted</title><p>Thanks</p>');
+    if (req.url.startsWith('/game')) return res.end(GAME_PAGE);
+    if (req.url.startsWith('/danger')) return res.end(DANGER_PAGE);
     if (req.url.startsWith('/other')) return res.end('<!doctype html><title>Other</title><p>Other page</p>');
     res.end(FORM_PAGE);
   });
@@ -145,6 +159,86 @@ const FORM_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Smoke
   answer = 1;
   await expectThrows('visiting a new public site can be refused', () => svc.runTool('navigate', { url: 'https://example.com' }), /did not allow/i);
   answer = 0;
+
+  // 14. game tools: fast keys, mouse, look, reflex
+  await svc.runTool('navigate', { url: base + '/game' });
+  const events = () => win.webContents.session && svc._debugEvents ? null : null;
+  const pageEvents = async () => (await svc.runTool('execute_js', { code: 'JSON.stringify(window.events)' })).result;
+  const promptsBeforeGame = prompts.length;
+  let keyRun = await svc.runTool('keys', { steps: ['ArrowLeft', { key: 'Space', action: 'down' }, { wait_ms: 150 }, { key: 'Space', action: 'up' }, { key: 'a', hold_ms: 20 }] });
+  const promptsAfterKeys = prompts.length;
+  expect('keys runs every step quickly', keyRun.steps === 5 && keyRun.elapsed_ms < 1200, JSON.stringify(keyRun));
+  const ev1 = JSON.parse(await pageEvents());
+  const types = ev1.filter(e => e.type.startsWith('key')).map(e => `${e.type}:${e.key}`);
+  expect('keys deliver real key events in order', types.join(',') === 'keydown:ArrowLeft,keyup:ArrowLeft,keydown: ,keyup: ,keydown:a,keyup:a', types.join(','));
+  expect('keys are trusted browser input', ev1.filter(e => e.type.startsWith('key')).every(e => e.trusted === true), JSON.stringify(ev1.slice(0, 2)));
+  const down = ev1.find(e => e.type === 'keydown' && e.key === ' '); const upEv = ev1.find(e => e.type === 'keyup' && e.key === ' ');
+  expect('a held key stays down for the requested time', upEv.t - down.t >= 120, `${upEv.t - down.t} ms`);
+  expect('arrow keys carry legacy keyCode 37', ev1.find(e => e.key === 'ArrowLeft').kc === 37, JSON.stringify(ev1.find(e => e.key === 'ArrowLeft')));
+  expect('keys needs no approval outside forms', promptsAfterKeys === promptsBeforeGame, JSON.stringify(prompts.slice(promptsBeforeGame, promptsAfterKeys)));
+  await expectThrows('keys rejects an unknown key name', () => svc.runTool('keys', { steps: ['Banana'] }), /Unsupported key/);
+  await expectThrows('keys rejects sequences that run too long', () => svc.runTool('keys', { steps: [{ key: 'a', hold_ms: 5000 }, { key: 'a', hold_ms: 5000 }, { key: 'a', hold_ms: 5000 }, { key: 'a', hold_ms: 5000 }, { key: 'a', hold_ms: 5000 }] }), /seconds/);
+
+  await svc.runTool('execute_js', { code: 'window.events.length = 0; 1' });
+  await svc.runTool('mouse', { action: 'click', x: 120, y: 80 });
+  await svc.runTool('mouse', { action: 'wheel', x: 100, y: 100, delta_y: 240 });
+  await new Promise(r => setTimeout(r, 150));
+  const ev2 = JSON.parse(await pageEvents());
+  const click = ev2.find(e => e.type === 'click');
+  expect('mouse click lands on the requested page coordinates', click && click.x === 120 && click.y === 80 && click.trusted, JSON.stringify(ev2));
+  expect('mouse wheel reaches the page', ev2.some(e => e.type === 'wheel' && e.dy > 0), JSON.stringify(ev2));
+  await expectThrows('mouse rejects out-of-range coordinates', () => svc.runTool('mouse', { action: 'click', x: 99999, y: 5 }), /must be a number/);
+
+  const t0 = Date.now();
+  const look = await svc.runTool('look', { width: 320, frames: 3, interval_ms: 50 });
+  expect('look returns small JPEG frames fast', look.frames.length === 3 && look.frames.every(f => /^data:image\/jpeg;base64,/.test(f)) && look.width <= 320 && Date.now() - t0 < 3000, `${look.frames.length} frames, ${look.width}px, ${Date.now() - t0} ms`);
+  const zoom = await svc.runTool('look', { region: { x: 0, y: 0, width: 100, height: 100 }, width: 200 });
+  expect('look can zoom into a region', zoom.frames.length === 1 && zoom.width <= 200, JSON.stringify({ w: zoom.width, h: zoom.height }));
+
+  // reflex: runs in the page, reads canvas pixels, presses keys, stops itself
+  await svc.runTool('execute_js', { code: 'window.events.length = 0; 1' });
+  const started = await svc.runTool('reflex', { action: 'start', code: 'api.mem.n = (api.mem.n || 0) + 1; if (api.mem.n === 5) { api.key("ArrowRight"); api.log("pressed", api.pixel(50, 50)); } if (api.mem.n >= 30) api.stop({ ticks: api.mem.n, pixel: api.pixel(50, 50) });', duration_ms: 5000 });
+  expect('reflex starts in the background', started.started === true, JSON.stringify(started));
+  expect('reflex start asked for approval', prompts.includes('Approve a game-speed script?'), JSON.stringify(prompts));
+  await new Promise(r => setTimeout(r, 900));
+  const status = await svc.runTool('reflex', { action: 'status' });
+  expect('reflex finished by itself and reported a result', status.running === false && status.ended === 'stopped by script' && status.result && status.result.ticks === 30, JSON.stringify(status));
+  expect('reflex read canvas pixels', status.result && JSON.stringify(status.result.pixel) === '[255,0,0,255]', JSON.stringify(status.result));
+  expect('reflex logged what it did', status.log.some(l => l.includes('pressed')), JSON.stringify(status.log));
+  const ev3 = JSON.parse(await pageEvents());
+  expect('reflex key presses reach page listeners with legacy keyCode', ev3.some(e => e.type === 'keydown' && e.key === 'ArrowRight' && e.kc === 39), JSON.stringify(ev3));
+  expect('reflex ran at frame rate', status.ticks_per_second >= 20 || status.elapsed_ms < 1500, JSON.stringify({ tps: status.ticks_per_second, ms: status.elapsed_ms }));
+
+  await expectThrows('a reflex with a syntax error reports it', () => svc.runTool('reflex', { action: 'start', code: 'if (' }), /could not start/i);
+  answer = 1;
+  await expectThrows('declining a reflex is respected', () => svc.runTool('reflex', { action: 'start', code: 'api.stop()' }), /declined/i);
+  answer = 0;
+
+  // interrupt stops a long-running reflex and releases held keys
+  await svc.runTool('reflex', { action: 'start', code: 'api.down("ArrowUp");', duration_ms: 60000 });
+  const running = await svc.runTool('reflex', { action: 'status' });
+  svc.interrupt();
+  await new Promise(r => setTimeout(r, 300));
+  const stopped = await svc.runTool('reflex', { action: 'status' });
+  expect('interrupt stops a running reflex and releases held keys', running.running === true && stopped.running === false && stopped.held_keys.length === 0, JSON.stringify({ running: running.running, stopped }));
+
+  // 15. coordinate clicks on a risky button still need approval, until auto-approve is on
+  await svc.runTool('navigate', { url: base + '/danger' });
+  answer = 1;
+  await expectThrows('a risky coordinate click can be declined', () => svc.runTool('mouse', { action: 'click', x: 50, y: 40 }), /declined/i);
+  expect('declined coordinate click did not submit', !hits.some(u => u.startsWith('/danger-submit')), JSON.stringify(hits));
+  svc.setAutoApprove(true);
+  const promptsBeforeAuto = prompts.length;
+  await svc.runTool('mouse', { action: 'click', x: 50, y: 40 });
+  await new Promise(r => setTimeout(r, 600));
+  expect('auto-approve lets the click through without a prompt', hits.some(u => u.startsWith('/danger-submit')) && prompts.length === promptsBeforeAuto, JSON.stringify({ hits, prompts: prompts.slice(promptsBeforeAuto) }));
+  const autoJs = await svc.runTool('execute_js', { code: '2 + 2' });
+  expect('auto-approve covers page scripts too', autoJs.result === '4' && prompts.length === promptsBeforeAuto, JSON.stringify(autoJs));
+  expect('auto-approve is reflected in browser state', svc.getState().autoApprove === true, JSON.stringify(svc.getState()));
+  const privateNav = await svc.runTool('navigate', { url: base + '/' }).then(() => 'loaded').catch(e => e.message);
+  expect('an already-approved local address still loads', privateNav === 'loaded', privateNav);
+  await expectThrows('auto-approve still never fills password fields', async () => { const d = await svc.runTool('get_dom', {}); const idx = Number((d.text.split('\n').find(l => l.includes('Password')).match(/^\[(\d+)\]/) || [])[1]); return svc.runTool('type', { index: idx, text: 'x' }); }, /password|must not fill/i);
+  svc.setAutoApprove(false);
 
   svc.shutdown();
   server.close();

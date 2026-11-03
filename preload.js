@@ -60,6 +60,8 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     setBounds(rect) { return ipcRenderer.invoke('browser:set-bounds', rect); },
     setVisible(value) { return ipcRenderer.invoke('browser:set-visible', !!value); },
     setAskNewSites(value) { return ipcRenderer.invoke('browser:set-ask-new-sites', !!value); },
+    setAutoApprove(value, ask) { return ipcRenderer.invoke('browser:set-auto-approve', !!value, ask === true); },
+    interrupt() { return ipcRenderer.invoke('browser:interrupt'); },
     setAgentActive(value) { return ipcRenderer.invoke('browser:set-agent-active', !!value); },
     state() { return ipcRenderer.invoke('browser:state'); },
     navigate(url) { return ipcRenderer.invoke('browser:navigate', String(url == null ? '' : url)); },
