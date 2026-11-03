@@ -604,3 +604,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  #chatView.has-both-docks .editor-dock{left:0;right:auto;width:50vw;max-width:50vw;min-width:0}
  #chatView.has-both-docks #editorDockRoot .editor-explorer{width:110px;flex-basis:110px}
 }
+
+.project-heading-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.project-folder-badge{display:inline-flex;vertical-align:middle;margin-left:6px;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:8px;letter-spacing:.08em;font-weight:700}
+.project-card h3{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.project-card p{overflow-wrap:anywhere}

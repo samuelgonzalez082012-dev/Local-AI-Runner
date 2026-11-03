@@ -2186,7 +2186,7 @@
     if(!projects.length){grid.innerHTML=`<div class="section-card"><h2>${escapeHTML(t('noProjects'))}</h2><p>${escapeHTML(t('createProjectHint'))}</p></div>`;return;}
     projects.forEach(project=>{
       const card=document.createElement('article');card.className='project-card';card.tabIndex=0;card.setAttribute('role','button');card.setAttribute('aria-label',`Open project ${project.name}`);
-      card.innerHTML=`<div class="card-icon">▦</div><h3>${escapeHTML(project.name)}</h3><p>${escapeHTML(project.description||t('projectWorkspace'))}</p><div class="card-meta"><span>${(project.documents||[]).length} ${escapeHTML(t('documents'))}</span><span>${conversations.filter(chat=>chat.projectId===project.id).length} ${escapeHTML(t('chatsCount'))}</span><span>${escapeHTML(t('updated'))} ${new Date(project.updated||project.created).toLocaleDateString()}</span></div>`;
+      card.innerHTML=`<div class="card-icon">▦</div><h3>${escapeHTML(project.name)}${project.folderPath?' <span class="project-folder-badge">FOLDER</span>':''}</h3><p>${escapeHTML(project.folderPath?project.folderPath:(project.description||t('projectWorkspace')))}</p><div class="card-meta"><span>${project.folderPath?'Linked folder':(project.documents||[]).length+' '+escapeHTML(t('documents'))}</span><span>${conversations.filter(chat=>chat.projectId===project.id).length} ${escapeHTML(t('chatsCount'))}</span><span>${escapeHTML(t('updated'))} ${new Date(project.updated||project.created).toLocaleDateString()}</span></div>`;
       card.addEventListener('click',()=>openProject(project.id));
       card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openProject(project.id);}});
       grid.appendChild(card);
