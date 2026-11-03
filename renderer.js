@@ -1434,6 +1434,7 @@
     if ($('browserDock')) $('browserDock').hidden = !docked;
     const dockButton = $('browserDockButton');
     if (dockButton) dockButton.setAttribute('aria-pressed', String(docked));
+    window.dispatchEvent(new Event('editor:dock-layout'));
     const layout = $('browserLayoutToggle');
     if (layout) { layout.textContent = docked ? '⤢' : '◧'; layout.title = docked ? 'Open the browser full size' : 'Dock beside chat'; layout.setAttribute('aria-label', layout.title); }
     syncBrowserBounds();

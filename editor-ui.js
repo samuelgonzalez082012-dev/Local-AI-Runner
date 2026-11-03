@@ -139,6 +139,7 @@ function toggleDock(force){
  updateDockLayout();
  if(open)loadTree(document.getElementById('editorDockRoot'));
 }
+window.addEventListener('editor:dock-layout',()=>updateDockLayout());
 function updateDockLayout(){
  const chat=document.getElementById('chatView');if(!chat)return;
  const editorOpen=!document.getElementById('editorDock')?.hidden;
