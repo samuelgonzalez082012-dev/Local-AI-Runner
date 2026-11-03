@@ -1569,7 +1569,7 @@
         if(!tool.name||server.error)return;
         const safeName=String(tool.name).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,40);
         const functionName=('mcp_'+server.id+'_'+safeName).slice(0,64);
-        if(remoteMap.has(functionName)||TOOLS[functionName])return;
+        if(remoteMap.has(functionName)||TOOLS[functionName]||settings.disabledTools.includes(functionName))return;
         remoteMap.set(functionName,{serverId:server.id,toolName:tool.name,serverName:server.name});
         canonical.push({
           definition:{name:functionName,description:'External MCP tool from '+server.name+': '+String(tool.description||'').slice(0,350),

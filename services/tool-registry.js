@@ -192,7 +192,7 @@ function createToolRegistry({ app }) {
 
   async function persist() {
     const snapshot = JSON.stringify(history.slice(-MAX_AUDIT), null, 2);
-    writeQueue = writeQueue.then(async () => {
+    writeQueue = writeQueue.catch(() => {}).then(async () => {
       await fs.mkdir(path.dirname(auditPath), { recursive: true });
       await atomicWriteFile(auditPath, snapshot, { mode: 0o600 });
     });

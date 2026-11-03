@@ -10,7 +10,7 @@ const { createToolRegistry, sanitizeSchema, validateArguments } = require('../se
 test('sanitizes supported JSON schema definitions and rejects unsafe shapes', () => {
   const schema = sanitizeSchema({ type: 'object', properties: { count: { type: 'integer', minimum: 1, maximum: 5 } }, required: ['count'], additionalProperties: false });
   assert.equal(schema.properties.count.maximum, 5);
-  assert.throws(() => sanitizeSchema({ type: 'object', properties: { '__proto__': { type: 'string' } } }));
+  assert.throws(() => sanitizeSchema(JSON.parse('{"type":"object","properties":{"__proto__":{"type":"string"}}}')));
   assert.throws(() => sanitizeSchema({ type: 'object', properties: { a: { type: 'not-a-type' } } }));
 });
 
