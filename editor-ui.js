@@ -77,7 +77,7 @@ async function save(){
  finally{state.busy=false;roots.forEach(r=>r.querySelectorAll('.editor-save').forEach(b=>b.disabled=false));}
 }
 async function createFile(){
- const path=prompt('New file path, relative to the selected workspace:','src/new-file.js');if(!path)return;
+ const path=prompt('New file path, relative to the selected workspace:','new-file.js');if(!path)return;
  if(path.startsWith('/')||path.split(/[\\/]/).some(p=>p==='..'||p==='')){alert('Enter a safe relative path inside the selected workspace.');return;}
  try{await window.localAI.workspace.create(path,'');await openFile(path);roots.forEach(r=>loadTree(r));}
  catch(error){alert('Could not create file: '+error.message);}
