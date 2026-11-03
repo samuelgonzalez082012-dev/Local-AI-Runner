@@ -18,17 +18,17 @@ test('validates required fields, types, bounds and additional properties', () =>
   const schema = sanitizeSchema({ type: 'object', properties: { count: { type: 'integer', minimum: 1, maximum: 5 }, mode: { type: 'string', enum: ['fast', 'safe'] } }, required: ['count'], additionalProperties: false });
   assert.deepEqual(validateArguments(schema, { count: 3, mode: 'safe' }), { count: 3, mode: 'safe' });
   assert.throws(() => validateArguments(schema, { mode: 'fast' }), /required/);
-  assert.throws(() => validateArguments(schema, { count: 0 }), /minimum/);
+  assert.throws(() => validateArguments(schema, { count: 0 }), /at least/);
   assert.throws(() => validateArguments(schema, { count: 2.5 }), /integer/);
-  assert.throws(() => validateArguments(schema, { count: 2, extra: true }), /not an allowed parameter/);
-  assert.throws(() => validateArguments(schema, { count: 2, mode: 'unsafe' }), /allowed values/);
+  assert.throws(() => validateArguments(schema, { count: 2, extra: true }), /not an allowed property/);
+  assert.throws(() => validateArguments(schema, { count: 2, mode: 'unsafe' }), /allowed option/);
 });
 
 test('validates nested arrays and object shapes', () => {
   const schema = sanitizeSchema({ type: 'object', properties: { entries: { type: 'array', minItems: 1, maxItems: 2, items: { type: 'object', properties: { label: { type: 'string', minLength: 2 } }, required: ['label'], additionalProperties: false } } }, required: ['entries'] });
   assert.doesNotThrow(() => validateArguments(schema, { entries: [{ label: 'ok' }] }));
-  assert.throws(() => validateArguments(schema, { entries: [] }), /too few/);
-  assert.throws(() => validateArguments(schema, { entries: [{ label: 'x' }] }), /minimum length/);
+  assert.throws(() => validateArguments(schema, { entries: [] }), /at least/);
+  assert.throws(() => validateArguments(schema, { entries: [{ label: 'x' }] }), /at least/);
 });
 
 test('registry rejects duplicate names and validates only registered tools', () => {
