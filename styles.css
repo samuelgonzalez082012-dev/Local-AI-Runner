@@ -609,3 +609,102 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .project-folder-badge{display:inline-flex;vertical-align:middle;margin-left:6px;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:8px;letter-spacing:.08em;font-weight:700}
 .project-card h3{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .project-card p{overflow-wrap:anywhere}
+
+
+/* Resizable browser and editor chat docks */
+#chatView .browser-dock,
+#chatView .editor-dock {
+  position: relative;
+  width: var(--dock-panel-width, min(36%, 560px));
+  min-width: 260px;
+  max-width: none;
+  flex: 0 0 var(--dock-panel-width, min(36%, 560px));
+}
+#chatView.has-both-docks .browser-dock,
+#chatView.has-both-docks .editor-dock {
+  width: var(--dock-panel-width, min(32%, 480px));
+  flex-basis: var(--dock-panel-width, min(32%, 480px));
+}
+.dock-resize-handle {
+  position: absolute;
+  z-index: 45;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: .24;
+  cursor: col-resize;
+  touch-action: none;
+  transition: opacity .12s ease, background .12s ease;
+}
+.dock-resize-handle--left {
+  left: 0;
+  transform: translateX(-50%);
+}
+.dock-resize-handle--right {
+  right: 0;
+  transform: translateX(50%);
+}
+.dock-resize-handle::before {
+  content: "";
+  width: 4px;
+  height: 52px;
+  border-left: 1px solid var(--text);
+  border-right: 1px solid var(--text);
+  border-radius: 2px;
+  opacity: .62;
+}
+.dock-resize-handle:hover,
+.dock-resize-handle:focus-visible,
+.dock-resize-handle.is-dragging {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  outline: none;
+}
+.dock-resize-handle:focus-visible::before,
+.dock-resize-handle.is-dragging::before {
+  border-color: var(--accent);
+  opacity: 1;
+}
+body.dock-resizing,
+body.dock-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+@media(max-width:920px) {
+  #chatView .browser-dock {
+    width: var(--dock-panel-width, min(92vw, 560px));
+    min-width: 220px;
+    max-width: none;
+    flex: none;
+  }
+  #chatView .editor-dock {
+    width: var(--dock-panel-width, min(92vw, 560px));
+    min-width: 220px;
+    max-width: none;
+    flex: none;
+  }
+  #chatView.has-both-docks .browser-dock {
+    width: var(--dock-panel-width, 50vw);
+    max-width: none;
+  }
+  #chatView.has-both-docks .editor-dock {
+    width: var(--dock-panel-width, 50vw);
+    max-width: none;
+  }
+  #chatView .browser-dock > .dock-resize-handle--left {
+    left: 0;
+    right: auto;
+    transform: translateX(-50%);
+  }
+  #chatView .editor-dock > .dock-resize-handle--right {
+    right: 0;
+    left: auto;
+    transform: translateX(50%);
+  }
+}
