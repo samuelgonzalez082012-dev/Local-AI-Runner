@@ -343,7 +343,9 @@ function configureDocuments() {
 }
 function configureWorkspace() {
   workspace = createWorkspaceService({ dialog, app });
-  ipcMain.handle('workspace:choose', async event => { assertTrustedRenderer(event); return workspace.choose(mainWindow); });
+  ipcMain.handle('workspace:choose', async (event, title) => { assertTrustedRenderer(event); return workspace.choose(mainWindow, typeof title === 'string' ? title.slice(0, 120) : undefined); });
+  ipcMain.handle('workspace:set-folder', async (event, folderPath) => { assertTrustedRenderer(event); return workspace.setFolder(folderPath); });
+  ipcMain.handle('workspace:import', async event => { assertTrustedRenderer(event); return workspace.importFiles(mainWindow); });
   ipcMain.handle('workspace:info', event => { assertTrustedRenderer(event); return workspace.getInfo(); });
   ipcMain.handle('workspace:list', async (event,relativePath) => { assertTrustedRenderer(event); return workspace.list(relativePath); });
   ipcMain.handle('workspace:read', async (event,relativePath) => { assertTrustedRenderer(event); return workspace.read(relativePath); });

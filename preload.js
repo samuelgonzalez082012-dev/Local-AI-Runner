@@ -56,7 +56,9 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     record(entry) { return ipcRenderer.invoke('tools:record', entry); }
   }),
   workspace: Object.freeze({
-    choose() { return ipcRenderer.invoke('workspace:choose'); },
+    choose(title) { return ipcRenderer.invoke('workspace:choose', title); },
+    setFolder(folderPath) { return ipcRenderer.invoke('workspace:set-folder', String(folderPath || '')); },
+    importFiles() { return ipcRenderer.invoke('workspace:import'); },
     info() { return ipcRenderer.invoke('workspace:info'); },
     list(relativePath) { return ipcRenderer.invoke('workspace:list', relativePath); },
     read(relativePath) { return ipcRenderer.invoke('workspace:read', relativePath); },

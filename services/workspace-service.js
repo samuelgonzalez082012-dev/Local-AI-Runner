@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs/promises');
+const fsConstants = require('node:fs').constants;
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { atomicWriteFile } = require('./atomic-file');
@@ -29,13 +30,61 @@ function createWorkspaceService({ dialog, app }) {
     return workspaceRoot ? { path: workspaceRoot, name: path.basename(workspaceRoot) } : null;
   }
 
-  async function choose(owner) {
-    const result = await dialog.showOpenDialog(owner, { title: 'Choose a folder for AI work', properties: ['openDirectory'] });
-    if (result.canceled || !result.filePaths[0]) return null;
-    workspaceRoot = await fs.realpath(result.filePaths[0]);
+  async function setFolder(directory) {
+    if (typeof directory !== 'string' || !directory.trim() || directory.length > 4096) throw new Error('Choose a valid project folder.');
+    const candidate = await fs.realpath(directory);
+    const stat = await fs.stat(candidate);
+    if (!stat.isDirectory()) throw new Error('The selected project path is not a folder.');
+    workspaceRoot = candidate;
     await fs.mkdir(userData, { recursive: true });
     await atomicWriteFile(configPath, JSON.stringify({ path: workspaceRoot }), { mode: 0o600 });
     return { path: workspaceRoot, name: path.basename(workspaceRoot) };
+  }
+
+  async function choose(owner, title = 'Choose a folder for AI work') {
+    const result = await dialog.showOpenDialog(owner, { title, properties: ['openDirectory'] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return setFolder(result.filePaths[0]);
+  }
+
+  async function importFiles(owner) {
+    requireRoot();
+    const extensions = [...TEXT_EXTENSIONS].map(extension => extension.slice(1));
+    const result = await dialog.showOpenDialog(owner, {
+      title: 'Import source files into the selected project folder',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Source and text files', extensions }]
+    });
+    if (result.canceled || !result.filePaths?.length) return { imported: [], skipped: [], cancelled: true };
+    if (result.filePaths.length > 50) throw new Error('Import up to 50 files at a time.');
+    const imported = [], skipped = [];
+    for (const sourcePath of result.filePaths) {
+      try {
+        const sourceStat = await fs.lstat(sourcePath);
+        if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error('Only regular files can be imported.');
+        if (!TEXT_EXTENSIONS.has(path.extname(sourcePath).toLowerCase())) throw new Error('This editor imports supported text and source-code files only.');
+        if (sourceStat.size > MAX_READ_BYTES) throw new Error('The file exceeds the 1.5 MB editor import limit.');
+        const originalName = path.basename(sourcePath);
+        if (!originalName || originalName === '.' || originalName === '..') throw new Error('The selected file name is not valid.');
+        const sourceRealPath = await fs.realpath(sourcePath);
+        const parsed = path.parse(originalName);
+        let relativePath = originalName;
+        let destination = await resolveInside(relativePath);
+        if (sourceRealPath === destination) throw new Error('This file is already inside the selected workspace.');
+        let suffix = 2;
+        while (await fs.lstat(destination).then(() => true, error => error.code === 'ENOENT' ? false : Promise.reject(error))) {
+          relativePath = parsed.name + ' (imported ' + suffix + ')' + parsed.ext;
+          destination = await resolveInside(relativePath);
+          suffix++;
+          if (suffix > 100) throw new Error('Could not find an unused name for this imported file.');
+        }
+        await fs.copyFile(sourceRealPath, destination, fsConstants.COPYFILE_EXCL);
+        imported.push({ name: path.basename(relativePath), path: relativePath, bytes: sourceStat.size });
+      } catch (error) {
+        skipped.push({ name: path.basename(sourcePath), reason: String(error.message || error).slice(0, 180) });
+      }
+    }
+    return { imported, skipped, cancelled: false };
   }
 
   function requireRoot() {
@@ -256,6 +305,8 @@ function createWorkspaceService({ dialog, app }) {
 
   return {
     choose,
+    setFolder,
+    importFiles,
     load,
     getInfo: () => workspaceRoot ? { path: workspaceRoot, name: path.basename(workspaceRoot) } : null,
     list, read, search, create, previewCreate, write, previewWrite, backups, restoreBackup,

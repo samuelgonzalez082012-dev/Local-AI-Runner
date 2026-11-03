@@ -126,6 +126,19 @@ async function save(){
  catch(error){notify('Save cancelled or failed: '+error.message);}
  finally{state.busy=false;roots.forEach(r=>r.querySelectorAll('.editor-save').forEach(b=>b.disabled=!state.tabs.find(t=>t.path===state.active)?.dirty));}
 }
+async function importFiles(root){
+ try{
+  const result=await window.localAI.workspace.importFiles();
+  if(result.cancelled)return;
+  if(result.imported?.length){
+   await loadTree(root);
+   await openFile(result.imported[0].path);
+   notify('Imported '+result.imported.length+' file(s): '+result.imported.map(item=>item.name).join(', '));
+  }
+  if(result.skipped?.length)notify((result.imported?.length||0)+' imported; '+result.skipped.length+' skipped. '+result.skipped.map(item=>item.name+': '+item.reason).join(' · '));
+  if(!result.imported?.length&&!result.skipped?.length)notify('No supported files were imported.');
+ }catch(error){notify('Could not import files: '+error.message);}
+}
 async function createFile(){
  const path=prompt('New file path, relative to the selected workspace:','new-file.js');if(!path)return;
  if(path.startsWith('/')||path.split(/[\\/]/).some(p=>!p||p==='.'||p==='..')){notify('Enter a safe relative path inside the selected workspace.');return;}
@@ -154,12 +167,13 @@ function preferencePanel(){
  return '<div class="editor-custom-panel" hidden><div class="editor-custom-head"><div><strong>Editor appearance</strong><small>Changes apply to the editor in every window.</small></div><button type="button" class="editor-custom-close" data-action="customize">×</button></div><label>Theme<select data-pref="theme"><option value="midnight">Midnight</option><option value="graphite">Graphite</option><option value="light">Light</option><option value="ocean">Ocean</option><option value="forest">Forest</option><option value="custom">Custom colors</option></select></label><label>Code font<select data-pref="fontFamily"><option value="cascadia">Cascadia Code</option><option value="consolas">Consolas</option><option value="system">System monospace</option><option value="fira">Fira Code</option><option value="jetbrains">JetBrains Mono</option></select></label><div class="editor-custom-grid"><label>Font size <output data-output="fontSize"></output><input type="range" min="11" max="22" step="1" data-pref="fontSize"></label><label>Line height <output data-output="lineHeight"></output><input type="range" min="1.2" max="2.2" step="0.1" data-pref="lineHeight"></label><label>Tab size<select data-pref="tabSize"><option value="2">2 spaces</option><option value="4">4 spaces</option><option value="8">8 spaces</option></select></label><label class="editor-check"><input type="checkbox" data-pref="lineNumbers"> Show line numbers</label></div><div class="editor-colors"><label>Background<input type="color" data-pref="background"></label><label>Panel<input type="color" data-pref="panel"></label><label>Text<input type="color" data-pref="text"></label><label>Accent<input type="color" data-pref="accent"></label><label>Keywords<input type="color" data-pref="keyword"></label><label>Strings<input type="color" data-pref="string"></label><label>Numbers<input type="color" data-pref="number"></label><label>Comments<input type="color" data-pref="comment"></label></div><div class="editor-custom-actions"><button type="button" class="btn small" data-action="reset-preferences">Reset</button><button type="button" class="btn small primary" data-action="close-customize">Done</button></div></div>';
 }
 function mount(root){
- root.innerHTML='<div class="editor-shell"><div class="editor-toolbar"><div class="editor-workspace-label"><span class="editor-live-dot"></span><span class="editor-workspace-name">Workspace</span></div><div class="editor-toolbar-actions"><button type="button" class="btn small" data-action="refresh">↻ Refresh</button><button type="button" class="btn small" data-action="new">＋ New file</button><button type="button" class="btn small primary editor-save" data-action="save" disabled>Save</button><button type="button" class="btn small" data-action="customize">Customize</button><button type="button" class="btn small" data-action="popout">↗ Pop out</button></div></div>'+preferencePanel()+'<div class="editor-layout"><aside class="editor-explorer"><div class="editor-explorer-head"><strong>EXPLORER</strong><button type="button" data-action="refresh" title="Refresh files">↻</button></div><div class="editor-tree"></div></aside><section class="editor-main"><div class="editor-tabs" role="tablist"></div><div class="editor-work-area"><div class="editor-empty"><div class="editor-empty-mark">⌘</div><strong>Open a file to start editing</strong></div></div><div class="editor-status"><span class="editor-file-path">No file selected</span><span class="editor-position">Ln 1, Col 1</span><span class="editor-language">TEXT</span></div></section></div></div>';
+ root.innerHTML='<div class="editor-shell"><div class="editor-toolbar"><div class="editor-workspace-label"><span class="editor-live-dot"></span><span class="editor-workspace-name">Workspace</span></div><div class="editor-toolbar-actions"><button type="button" class="btn small" data-action="refresh">↻ Refresh</button><button type="button" class="btn small" data-action="import">⇧ Import file</button><button type="button" class="btn small" data-action="new">＋ New file</button><button type="button" class="btn small primary editor-save data-action="save" disabled>Save</button><button type="button" class="btn small" data-action="customize">Customize</button><button type="button" class="btn small" data-action="popout">↗ Pop out</button></div></div>'+preferencePanel()+'<div class="editor-layout"><aside class="editor-explorer"><div class="editor-explorer-head"><strong>EXPLORER</strong><button type="button" data-action="refresh" title="Refresh files">↻</button></div><div class="editor-tree"></div></aside><section class="editor-main"><div class="editor-tabs" role="tablist"></div><div class="editor-work-area"><div class="editor-empty"><div class="editor-empty-mark">⌘</div><strong>Open a file to start editing</strong></div></div><div class="editor-status"><span class="editor-file-path">No file selected</span><span class="editor-position">Ln 1, Col 1</span><span class="editor-language">TEXT</span></div></section></div></div>';
  root.addEventListener('click',event=>{
   const button=event.target.closest('[data-action]');if(!button||!root.contains(button))return;
   const action=button.dataset.action;
   if(action==='refresh'){loadTree(root);return;}
   if(action==='new'){createFile();return;}
+  if(action==='import'){importFiles(root);return;}
   if(action==='save'){save();return;}
   if(action==='popout'){window.localAI.editor.openWindow().catch(error=>notify(error.message));return;}
   if(action==='customize'){const panel=root.querySelector('.editor-custom-panel');panel.hidden=!panel.hidden;syncPreferenceControls(panel);return;}

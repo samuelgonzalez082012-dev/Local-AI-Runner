@@ -2192,11 +2192,27 @@
       grid.appendChild(card);
     });
   }
-  function openProject(projectId){
+  async function openProject(projectId){
     const project=projects.find(entry=>entry.id===projectId);if(!project)return;
+    if(project.folderPath){
+      try{workspaceInfo=await window.localAI.workspace.setFolder(project.folderPath);await refreshWorkspaceInfo();}
+      catch(error){toast('Could not open this project folder: '+error.message);return;}
+    }
     activeProjectId=projectId;$('projectWorkspace').hidden=false;$('projectGrid').hidden=true;
-    $('activeProjectTitle').textContent=project.name;$('activeProjectDescription').textContent=project.description||'';
+    $('activeProjectTitle').textContent=project.name;
+    $('activeProjectDescription').textContent=[project.description||'',project.folderPath?'Folder: '+project.folderPath:''].filter(Boolean).join(' · ');
     renderProjectDocuments();
+  }
+  async function addFolderProject(){
+    try{
+      const folder=await window.localAI.workspace.choose('Choose an existing folder to add as a project');
+      if(!folder)return;
+      const existing=projects.find(project=>project.folderPath===folder.path);
+      if(existing){toast('That folder is already a project.');await openProject(existing.id);return;}
+      const project={id:uid(),name:folder.name.slice(0,80),description:'Folder project',folderPath:folder.path,documents:[],created:Date.now(),updated:Date.now()};
+      projects.unshift(project);await saveCollection('projects',projects);renderProjects();await openProject(project.id);
+      toast('Added '+folder.name+' as a folder project.');
+    }catch(error){toast('Could not add folder project: '+error.message);}
   }
   function renderProjectDocuments(){
     const project=projects.find(entry=>entry.id===activeProjectId);const list=$('projectDocuments');list.replaceChildren();
@@ -3102,6 +3118,7 @@
     on('conversationSearch','input',renderConversationList);
 
     on('newProject','click',createProject);
+    on('addFolderProject','click',addFolderProject);
     on('backProjects','click',()=>{activeProjectId=null;$('projectWorkspace').hidden=true;$('projectGrid').hidden=false;renderProjects();});
     on('addProjectDocuments','click',()=> $('projectFileInput').click());
     on('projectFileInput','change',async event=>{await addProjectDocuments(event.target.files);event.target.value='';});
