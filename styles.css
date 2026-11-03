@@ -570,3 +570,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .project-editor-root[hidden]{display:none}
 .project-editor-root .editor-shell{height:100%}
 @media(max-width:920px){.editor-dock{position:fixed;z-index:34;inset:60px 0 0;width:100%;min-width:0;border-left:0}.editor-dock[hidden]{display:none}}
+
+.tool-registry-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--border-soft)}
+.tool-registry-heading h3{font-size:12px;margin:0}.tool-registry-heading small{display:block;color:var(--muted);font-size:9px;line-height:1.5;margin-top:3px}
+.tool-registry-list{display:flex;flex-direction:column;gap:5px}
+.tool-registry-group{margin:10px 0 3px;color:var(--subtle);font-size:9px;letter-spacing:.08em;text-transform:uppercase}
+.tool-registry-row{display:flex;align-items:flex-start;gap:8px;padding:8px;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg);cursor:pointer}
+.tool-registry-row input{margin:3px 0 0;accent-color:var(--accent);flex:0 0 auto}
+.tool-registry-copy{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tool-registry-copy strong{font-size:10px;overflow-wrap:anywhere}
+.tool-registry-copy small{color:var(--muted);font-size:9px;line-height:1.4;overflow-wrap:anywhere}
+.tool-registry-copy .tool-registry-policy{color:var(--subtle);font-size:8px}
+.tool-audit-list{display:flex;flex-direction:column;gap:5px}
+.tool-audit-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border:1px solid var(--border-soft);border-radius:7px;background:var(--bg)}
+.tool-audit-main{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tool-audit-main strong{font-size:10px;overflow-wrap:anywhere}
+.tool-audit-main small,.tool-audit-error{color:var(--muted);font-size:8px;line-height:1.4}
+.tool-audit-status{flex:0 0 auto;padding:3px 6px;border-radius:20px;background:var(--panel-3);color:var(--muted);font-size:8px}
+.tool-audit-status.completed{color:var(--good);background:color-mix(in srgb,var(--good) 12%,transparent)}
+.tool-audit-status.failed,.tool-audit-status.blocked{color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent)}
+.tool-audit-error{flex:1 0 100%;overflow-wrap:anywhere}

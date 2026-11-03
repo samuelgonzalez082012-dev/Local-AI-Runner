@@ -1067,6 +1067,71 @@
     if (AGENT_ONLY_TOOLS.has(name)) return !!agentMode;
     return true;
   }
+  function availableToolCatalog() {
+    const entries = Object.values(TOOLS).map(tool => {
+      const details = toolDetails(tool.definition.name);
+      return { name: tool.definition.name, description: tool.definition.description, source: 'builtin', category: details.category, approval: details.approval, label: details.label };
+    });
+    (mcpServers || []).forEach(server => (server.tools || []).forEach(tool => {
+      if (!tool.name || server.error) return;
+      const safeName = String(tool.name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+      const name = ('mcp_' + server.id + '_' + safeName).slice(0, 64);
+      const details = toolDetails(name, 'mcp');
+      if (!entries.some(entry => entry.name === name)) entries.push({ name, description: String(tool.description || ''), source: 'mcp', category: details.category, approval: details.approval, label: server.name });
+    }));
+    return entries.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  }
+  function renderToolManagement() {
+    const target = $('toolRegistryList');
+    if (!target) return;
+    target.replaceChildren();
+    const entries = availableToolCatalog();
+    if (!entries.length) {
+      const empty = document.createElement('p'); empty.className = 'muted-text'; empty.textContent = 'No tools are currently registered. Connect an MCP server or enable built-in tools.'; target.append(empty); return;
+    }
+    const groups = new Map();
+    entries.forEach(entry => { if (!groups.has(entry.category)) groups.set(entry.category, []); groups.get(entry.category).push(entry); });
+    const names = { 'app.read':'App data · read-only', 'workspace.read':'Workspace · read-only', 'workspace.write':'Workspace · writes', 'browser':'Browser tools', 'agent.control':'Agent planning', 'external.connector':'External MCP tools' };
+    for (const [category, items] of groups) {
+      const heading = document.createElement('div'); heading.className = 'tool-registry-group'; heading.textContent = names[category] || category; target.append(heading);
+      items.forEach(entry => {
+        const row = document.createElement('label'); row.className = 'tool-registry-row';
+        const check = document.createElement('input'); check.type = 'checkbox'; check.checked = !settings.disabledTools.includes(entry.name);
+        check.setAttribute('aria-label', 'Enable ' + entry.name);
+        check.addEventListener('change', () => {
+          if (check.checked) settings.disabledTools = settings.disabledTools.filter(name => name !== entry.name);
+          else if (!settings.disabledTools.includes(entry.name)) settings.disabledTools.push(entry.name);
+          saveSettings(); renderToolManagement();
+        });
+        const body = document.createElement('span'); body.className = 'tool-registry-copy';
+        const title = document.createElement('strong'); title.textContent = entry.name;
+        const description = document.createElement('small'); description.textContent = (entry.source === 'mcp' ? 'MCP · ' : 'Built-in · ') + (entry.description || 'No description provided.');
+        const approval = document.createElement('small'); approval.className = 'tool-registry-policy'; approval.textContent = entry.approval;
+        body.append(title, description, approval); row.append(check, body); target.append(row);
+      });
+    }
+    const count = $('toolRegistryCount'); if (count) count.textContent = entries.length + ' available · ' + (entries.length - settings.disabledTools.filter(name => entries.some(entry => entry.name === name)).length) + ' enabled';
+  }
+  async function renderToolAudit() {
+    const target = $('toolAuditList');
+    if (!target || !window.localAI?.tools) return;
+    target.replaceChildren();
+    try {
+      const entries = await window.localAI.tools.audit(20);
+      if (!entries.length) { const empty = document.createElement('p'); empty.className = 'muted-text'; empty.textContent = 'No tool calls have been recorded yet.'; target.append(empty); return; }
+      entries.forEach(entry => {
+        const row = document.createElement('div'); row.className = 'tool-audit-row';
+        const main = document.createElement('div'); main.className = 'tool-audit-main';
+        const name = document.createElement('strong'); name.textContent = entry.name;
+        const meta = document.createElement('small'); meta.textContent = new Date(entry.at).toLocaleString() + ' · ' + entry.category + (entry.durationMs === null ? '' : ' · ' + entry.durationMs + ' ms');
+        main.append(name, meta);
+        const status = document.createElement('span'); status.className = 'tool-audit-status ' + entry.status; status.textContent = entry.status;
+        row.append(main, status);
+        if (entry.error) { const error = document.createElement('small'); error.className = 'tool-audit-error'; error.textContent = entry.error; row.append(error); }
+        target.append(row);
+      });
+    } catch (error) { target.textContent = 'Could not load tool activity: ' + error.message; }
+  }
   const cleanIpcError = error => String(error?.message || error || 'Something went wrong.').replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
   const BROWSER_GUIDE = [
@@ -2541,6 +2606,7 @@
     const list=$('connectorList');if(!list)return;list.replaceChildren();
     if(!window.localAI?.connectors){list.textContent=t('connectorUnavailable');return;}
     try{mcpServers=await window.localAI.connectors.list();}catch(error){mcpServers=[];toast(`${t('connectorLoadFailed')}: ${error.message}`);}
+    renderToolManagement();
     if(!mcpServers.length){list.innerHTML=`<span class="muted-text">${escapeHTML(t('noConnectors'))}</span>`;return;}
     mcpServers.forEach(server=>{
       const row=document.createElement('div');row.className='connector-row';row.innerHTML=`<div><strong>${escapeHTML(server.name)}</strong><small>${escapeHTML(server.url)} · ${server.tools?.length||0} ${escapeHTML(t('toolsCount'))} ${server.error?'· '+escapeHTML(server.error):''}</small></div><button class="btn small danger">${escapeHTML(t('disconnect'))}</button>`;
@@ -2892,7 +2958,8 @@
       keys.forEach(key => { settings[key] = DEFAULTS[key]; });
       syncSettingsUI(); saveSettings(); applyAppearance(); toast('Appearance and layout reset.');
     });
-    on('toolsEnabled','change',event=>setSetting('toolsEnabled',event.target.checked));
+    on('toolsEnabled','change',event=>{setSetting('toolsEnabled',event.target.checked);renderToolManagement();});
+    on('refreshToolAudit','click',renderToolAudit);
     on('browserEnabled','change',event=>{
       setSetting('browserEnabled',event.target.checked);
       if(event.target.checked&&!settings.toolsEnabled){settings.toolsEnabled=true;saveSettings();if($('toolsEnabled'))$('toolsEnabled').checked=true;toast('Built-in tools were turned on because the browser tools need them.');}
@@ -2944,7 +3011,7 @@
     });
     on('tabs','click',event=>{
       const button=event.target.closest('button[data-tab]');
-      if(button)showSettingsTab(button.dataset.tab);
+      if(button){showSettingsTab(button.dataset.tab);if(button.dataset.tab==='tools'){renderToolManagement();renderToolAudit();}}
     });
     on('saveThemeProfile','click',saveThemeProfile);
     on('exportTheme','click',exportTheme);
@@ -3159,6 +3226,7 @@
     loadSpeechVoices();
     if(benchmarkHistory.length){const latest=benchmarkHistory[0];$('benchmarkResults').innerHTML=(latest.results||[]).map(result=>`<div class="benchmark-row"><strong>${escapeHTML(result.model)}</strong><span>${result.tps?`${result.tps.toFixed(1)} tok/s`:`${result.elapsed.toFixed(1)}s`}</span><span>${escapeHTML(result.error||result.preview||'')}</span></div>`).join('');}
     await Promise.all([loadModels(),refreshWorkspaceInfo(),renderConnectors()]);
+    renderToolManagement();renderToolAudit();
     refreshRuntime();
     setInterval(()=>{processScheduledTasks().catch(error=>console.warn('Scheduled task check failed:',error));},15000);
   }
