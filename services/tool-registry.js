@@ -8,7 +8,7 @@ const { sanitizeInputSchema, validateToolArguments } = require('./mcp-service');
 
 const MAX_TOOLS = 300;
 const MAX_AUDIT = 500;
-const MAX_ARGUMENT_BYTES = 64 * 1024;
+const MAX_ARGUMENT_BYTES = 1_050_000;
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const ALLOWED_TYPES = new Set(['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']);
 
@@ -32,7 +32,7 @@ function sanitizeSchema(schema) {
 function validateArguments(schema, args) {
   if (!isPlainObject(args)) throw new Error('Tool arguments must be a JSON object.');
   const safeArgs = cloneJson(args, 'Tool arguments');
-  return validateToolArguments(schema, safeArgs);
+  return validateToolArguments(schema, safeArgs, { maxBytes: MAX_ARGUMENT_BYTES });
 }
 
 function normalizeDefinition(entry) {

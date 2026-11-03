@@ -264,12 +264,12 @@ function sanitizeInputSchema(schema) {
   return visit(schema || { type: 'object', properties: {} }, 0, true);
 }
 
-function validateToolArguments(schema, args) {
+function validateToolArguments(schema, args, { maxBytes = MAX_TOOL_ARGUMENT_BYTES } = {}) {
   const safeSchema = sanitizeInputSchema(schema || { type: 'object', properties: {} });
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('External tool arguments must be a JSON object.');
   let serialized;
   try { serialized = JSON.stringify(args); } catch (_) { throw new Error('External tool arguments must be JSON-serializable.'); }
-  if (typeof serialized !== 'string' || Buffer.byteLength(serialized, 'utf8') > MAX_TOOL_ARGUMENT_BYTES) throw new Error('External tool arguments exceed the 200 KB limit.');
+  if (typeof serialized !== 'string' || Buffer.byteLength(serialized, 'utf8') > maxBytes) throw new Error('External tool arguments exceed the configured size limit.');
   const safeArgs = JSON.parse(serialized);
   let nodes = 0;
   function fail(path, reason) { throw new Error(`Invalid MCP tool arguments at ${path || '$'}: ${reason}`); }

@@ -1054,10 +1054,10 @@
   const hasBrowserBridge = () => !!window.localAI?.browser;
   function toolDetails(name, source = 'builtin') {
     if (source === 'mcp') return { category: 'external.connector', approval: 'Every call requires native approval', label: 'External MCP' };
-    if (name.startsWith('browser_')) return { category: 'browser', approval: 'Browser safety checks apply', label: 'Browser' };
-    if (['edit_workspace_file', 'create_project_file'].includes(name)) return { category: 'workspace.write', approval: 'Native confirmation and backup', label: 'Workspace write' };
+    if (name.startsWith('browser_')) return { category: 'browser', approval: 'Work mode + browser permission; risky actions ask', label: 'Browser' };
+    if (['edit_workspace_file', 'create_project_file'].includes(name)) return { category: 'workspace.write', approval: 'Work mode + file permission + native confirmation and backup', label: 'Workspace write' };
     if (name.includes('workspace')) return { category: 'workspace.read', approval: 'Read-only, confined to selected workspace', label: 'Workspace read' };
-    if (AGENT_ONLY_TOOLS.has(name)) return { category: 'agent.control', approval: 'Agent plan control', label: 'Agent control' };
+    if (AGENT_ONLY_TOOLS.has(name)) return { category: 'agent.control', approval: 'Work mode only', label: 'Agent control' };
     return { category: 'app.read', approval: 'Read-only app data', label: 'App read' };
   }
   function toolAllowed(name, agentMode) {
@@ -1553,10 +1553,10 @@
     openai(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; }
   };
   async function activeToolDefinitions(model, agentMode) {
-    if (!settings.toolsEnabled) return { definitions:[], remoteMap:new Map() };
+    if (!settings.toolsEnabled) { await window.localAI.tools.register([]); return { definitions:[], remoteMap:new Map() }; }
     if(settings.backend==='ollama') {
       const info=capabilities.get(model);
-      if(!info || !info.known || !info.tools) return { definitions:[], remoteMap:new Map() };
+      if(!info || !info.known || !info.tools) { await window.localAI.tools.register([]); return { definitions:[], remoteMap:new Map() }; }
     }
     const canonical = [];
     const remoteMap = new Map();

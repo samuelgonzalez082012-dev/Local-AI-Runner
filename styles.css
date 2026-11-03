@@ -582,7 +582,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .tool-registry-copy small{color:var(--muted);font-size:9px;line-height:1.4;overflow-wrap:anywhere}
 .tool-registry-copy .tool-registry-policy{color:var(--subtle);font-size:8px}
 .tool-audit-list{display:flex;flex-direction:column;gap:5px}
-.tool-audit-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border:1px solid var(--border-soft);border-radius:7px;background:var(--bg)}
+ .tool-audit-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px;border:1px solid var(--border-soft);border-radius:7px;background:var(--bg)}
 .tool-audit-main{display:flex;flex-direction:column;gap:3px;min-width:0}
 .tool-audit-main strong{font-size:10px;overflow-wrap:anywhere}
 .tool-audit-main small,.tool-audit-error{color:var(--muted);font-size:8px;line-height:1.4}
