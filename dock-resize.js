@@ -50,7 +50,7 @@
     function storageGet(id) {
       try {
         const value = Number(win.localStorage.getItem(STORAGE_PREFIX + id));
-        return Number.isFinite(value) && value >= MIN_MOBILE_WIDTH && value <= 2000 ? value : null;
+        return Number.isFinite(value) && value >= MIN_MOBILE_WIDTH ? value : null;
       } catch (_) { return null; }
     }
 
@@ -82,11 +82,11 @@
       const otherWidth = otherVisible(id) ? panels[otherId].getBoundingClientRect().width : 0;
       if (mobile) {
         const max = otherWidth ? containerWidth - otherWidth - 20 : containerWidth - 40;
-        return { min, max: Math.max(min, Math.min(820, max)) };
+        return { min, max: Math.max(min, max) };
       }
       const chatMinimum = otherWidth ? 360 : 420;
       const max = containerWidth - chatMinimum - otherWidth - 12;
-      return { min, max: Math.max(min, Math.min(820, max)) };
+      return { min, max: Math.max(min, max) };
     }
 
     function updateHandle(handle, width, bounds) {
@@ -173,7 +173,7 @@
       handle.setAttribute('aria-orientation', 'vertical');
       handle.setAttribute('aria-label', 'Resize ' + id + ' sidebar');
       handle.setAttribute('aria-valuemin', String(isMobile() ? MIN_MOBILE_WIDTH : MIN_DESKTOP_WIDTH));
-      handle.setAttribute('aria-valuemax', '820');
+      handle.setAttribute('aria-valuemax', String(Math.round(boundsFor(id).max)));
       handle.setAttribute('aria-valuenow', String(Math.round(panel.getBoundingClientRect().width || 360)));
       handle.tabIndex = 0;
       handle.addEventListener('pointerdown', event => startDrag(id, handle, event));
