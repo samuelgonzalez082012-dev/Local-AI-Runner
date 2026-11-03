@@ -1554,11 +1554,9 @@
     openai(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; }
   };
   async function activeToolDefinitions(model, agentMode) {
-    if (!settings.toolsEnabled) { await window.localAI.tools.register([]); return { definitions:[], remoteMap:new Map() }; }
-    if(settings.backend==='ollama') {
-      const info=capabilities.get(model);
-      if(!info || !info.known || !info.tools) { await window.localAI.tools.register([]); return { definitions:[], remoteMap:new Map() }; }
-    }
+    if (!settings.toolsEnabled) { await window.localAI.tools.register([]); return { definitions:[], remoteMap:new Map(), fallbackPrompt:'', fallbackNames:null }; }
+    const modelInfo = settings.backend === 'ollama' ? capabilities.get(model) : null;
+    const nativeToolsSupported = settings.backend !== 'ollama' || !!(modelInfo?.known && modelInfo.tools);
     const canonical = [];
     const remoteMap = new Map();
     Object.values(TOOLS).filter(tool=>toolAllowed(tool.definition.name,agentMode)).forEach(tool=>{
@@ -1583,13 +1581,18 @@
     const registered=await window.localAI.tools.catalog();
     const registeredNames=new Set(registered.map(item=>item.name));
     if(registration.rejected) console.warn('Some tool definitions were excluded by the registry:',registration.errors);
+    const safeCanonical = canonical.filter(item=>registeredNames.has(item.definition.name));
     const adapter=TOOL_PROVIDER_ADAPTERS[settings.backend]||TOOL_PROVIDER_ADAPTERS.openai;
-    const definitions=canonical.filter(item=>registeredNames.has(item.definition.name)).map(item=>adapter(item.definition));
+    const definitions=nativeToolsSupported ? safeCanonical.map(item=>adapter(item.definition)) : [];
     const registeredRemote=new Map([...remoteMap].filter(([name])=>registeredNames.has(name)));
-    return {definitions,remoteMap:registeredRemote};
+    if(nativeToolsSupported) return {definitions,remoteMap:registeredRemote,fallbackPrompt:'',fallbackNames:null};
+    const fallback=window.LocalAIRunnerToolFallback?.buildToolFallbackPrompt(safeCanonical)||{prompt:'',names:[]};
+    const fallbackNames=new Set(fallback.names);
+    const fallbackRemote=new Map([...registeredRemote].filter(([name])=>fallbackNames.has(name)));
+    return {definitions,remoteMap:fallbackRemote,fallbackPrompt:fallback.prompt,fallbackNames};
   }
 
-  async function runTool(name,args,remoteMap,chat,signal,agentMode) {
+  async function runTool(name,args,remoteMap,chat,signal,agentMode,allowedNames=null) {
     const remote=remoteMap?.get(name);
     const tool=TOOLS[name];
     const details=toolDetails(name,remote?'mcp':'builtin');
@@ -1597,6 +1600,7 @@
     let auditStatus='failed';
     let auditError='';
     try {
+      if(allowedNames && !allowedNames.has(name)) throw new Error('This tool was not included in the current model’s approved tool list.');
       if(!settings.toolsEnabled) throw new Error('Tools are disabled in the Inspector.');
       if(!toolAllowed(name,agentMode)) throw new Error('This tool is disabled or not permitted in the current mode.');
       if(!remote&&!tool) throw new Error('Tool “'+name+'” is not available.');
@@ -1628,17 +1632,19 @@
     return {};
   }
 
-  async function streamCompletion({ model, messages, tools, signal, onDelta }) {
+  async function streamCompletion({ model, messages, tools, toolFallbackPrompt = '', signal, onDelta }) {
     await ensureServerApproved();
     const result = { content: '', thinking: '', toolCalls: [], chunks: 0, evalCount: 0, evalDuration: 0, rawContent: '', reasoningField: '' };
     const partialCalls = new Map();
+    const wireMessages = toWire(messages);
+    if(toolFallbackPrompt) wireMessages.unshift({role:'system',content:toolFallbackPrompt});
     const requestBody = settings.backend === 'ollama'
-      ? { model, messages: toWire(messages), stream: true, options: {
+      ? { model, messages: wireMessages, stream: true, options: {
           temperature: settings.temp, top_p: settings.topP, repeat_penalty: settings.repeatPenalty,
           ...(settings.numCtx > 0 ? { num_ctx: settings.numCtx } : {}),
           ...(settings.maxTokens > 0 ? { num_predict: settings.maxTokens } : {})
         }, ...(tools.length ? { tools } : {}) }
-      : { model, messages: toWire(messages), stream: true, temperature: settings.temp, top_p: settings.topP,
+      : { model, messages: wireMessages, stream: true, temperature: settings.temp, top_p: settings.topP,
           ...(settings.maxTokens > 0 ? { max_tokens: settings.maxTokens } : {}), ...(tools.length ? { tools } : {}) };
     if (settings.backend === 'ollama') {
       const info = capabilities.get(model);
@@ -1754,6 +1760,10 @@
       result.toolCalls.push({ id: call.id, name: call.name, args: normalizeToolArguments(call.arguments) });
     });
     refreshOutput();
+    if(toolFallbackPrompt && result.content) {
+      const extracted=window.LocalAIRunnerToolFallback?.parseToolFallbackResponse(result.content);
+      if(extracted) { result.content=extracted.content; result.toolCalls.push(...extracted.calls); }
+    }
     return result;
   }
 
@@ -1782,8 +1792,8 @@
     const roundLimit = agentMode ? settings.maxAgentSteps : 8;
     if (agentMode && !settings.toolsEnabled) {
       toast('Enable built-in tools in the Inspector before using workspace tools. Agent mode can still answer without tools.');
-    } else if (agentMode && settings.backend === 'ollama' && tools.length === 0) {
-      toast('This Ollama model does not report tool support. Agent mode will run as a normal chat turn.');
+    } else if (agentMode && settings.backend === 'ollama' && tools.length === 0 && toolSet.fallbackPrompt) {
+      toast('This local model will use structured tool requests. Registry validation and normal approvals still apply.');
     }
     for (let round = 0; round < roundLimit; round++) {
       await waitWhilePaused(chat, signal);
@@ -1796,7 +1806,7 @@
       let aborted = false;
       try {
         result = await streamCompletion({
-          model, messages: payload, tools, signal,
+          model, messages: payload, tools, toolFallbackPrompt:toolSet.fallbackPrompt, signal,
           onDelta: partial => { applyResult(message, partial); onUpdate('delta', message); }
         });
         applyResult(message, result);
@@ -1825,7 +1835,7 @@
         await waitWhilePaused(chat, signal);
         if (signal.aborted) { call.status = 'error'; call.result = 'Cancelled by user.'; continue; }
         try {
-          call.result = await runTool(call.name, call.args, toolSet.remoteMap, chat, signal, agentMode);
+          call.result = await runTool(call.name, call.args, toolSet.remoteMap, chat, signal, agentMode, toolSet.fallbackNames);
           call.status = 'done';
         } catch (error) {
           call.result = `Tool error: ${error.message}`;
