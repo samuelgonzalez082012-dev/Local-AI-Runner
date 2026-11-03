@@ -7,7 +7,7 @@ Local AI Runner is an Electron desktop app for chatting with locally hosted lang
 - Windows, macOS or Linux
 - Node.js 22.13 or newer (or Node.js 24 or newer)
 - npm
-- [Ollama](https://ollama.com/) or an OpenAI-compatible inference server
+- [Ollama](https://ollama.com/), an OpenAI-compatible inference server, or an Anthropic API key for cloud API access
 
 ## Install and run
 
@@ -28,6 +28,18 @@ Local AI Runner is an Electron desktop app for chatting with locally hosted lang
 5. Start Ollama (or your compatible local inference server), open **Connections**, and connect to the server. The default Ollama address is `http://localhost:11434`.
 
 The app does not download models. Install and manage models using your inference server's own tools.
+
+### Supported model providers
+
+- **Ollama:** connect to `http://localhost:11434`. Tool calling uses native model support when available, with a structured request fallback for models that do not advertise native tool calling.
+- **OpenAI-compatible API:** connect to your compatible server URL and provide its API key if required.
+- **Anthropic API:** choose **Anthropic API**, use the default `https://api.anthropic.com` URL, and enter an Anthropic API key. The app uses the Anthropic Messages API, including its streaming and native tool-use formats. Remote server approval is required before prompts are sent. API access and any provider charges are managed by Anthropic.
+
+### Universal tool registry
+
+Open **Inspector → Tools** to enable the tool system and manage individual built-in or connected MCP tools. Each registered tool has a validated JSON Schema; arguments are checked again immediately before execution. Workspace writes continue to require the app's native confirmation and backup flow. MCP calls keep their connector approval checks.
+
+The recent activity list stores tool names, source, category, result status, timing and a short error message. It does not store tool arguments, prompts or file contents. The local audit file is kept in the app's user-data folder.
 
 ## Integrated browser and Cowork agent (1.3.0)
 
