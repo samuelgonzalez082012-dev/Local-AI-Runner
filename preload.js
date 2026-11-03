@@ -40,6 +40,13 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     setApiKey(value) { return ipcRenderer.invoke('credentials:set-api-key', value); }
   }),
   editor: Object.freeze({ openWindow() { return ipcRenderer.invoke('editor:open-window'); } }),
+  tools: Object.freeze({
+    register(definitions) { return ipcRenderer.invoke('tools:register', definitions); },
+    validate(name, args) { return ipcRenderer.invoke('tools:validate', { name: String(name || ''), args }); },
+    catalog() { return ipcRenderer.invoke('tools:catalog'); },
+    audit(limit) { return ipcRenderer.invoke('tools:audit', limit); },
+    record(entry) { return ipcRenderer.invoke('tools:record', entry); }
+  }),
   workspace: Object.freeze({
     choose() { return ipcRenderer.invoke('workspace:choose'); },
     info() { return ipcRenderer.invoke('workspace:info'); },

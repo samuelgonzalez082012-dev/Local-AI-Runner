@@ -8,6 +8,7 @@ const { createWorkspaceService } = require('./services/workspace-service');
 const { createMcpService } = require('./services/mcp-service');
 const { createBrowserService } = require('./services/browser-service');
 const { atomicWriteFile } = require('./services/atomic-file');
+const { createToolRegistry } = require('./services/tool-registry');
 
 // Preserve the user-data directory created by the original repository package.
 // This keeps existing IndexedDB chats, credentials, workspace selection and MCP settings.
@@ -22,6 +23,7 @@ let mainWindow = null;
 let workspace = null;
 let connectors = null;
 let browser = null;
+let toolRegistry = null;
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
 const editorWindows = new Set();
@@ -314,6 +316,31 @@ function configureWorkspace() {
     return workspace.restoreBackup(String(id));
   });
 }
+function configureToolRegistry() {
+  toolRegistry = createToolRegistry({ app });
+  ipcMain.handle('tools:register', event => {
+    assertTrustedRenderer(event);
+    return toolRegistry.register(arguments[1]);
+  });
+  ipcMain.handle('tools:validate', (event, payload) => {
+    assertTrustedRenderer(event);
+    if (!payload || typeof payload.name !== 'string') throw new Error('Invalid tool validation request.');
+    return toolRegistry.validate(payload.name, payload.args);
+  });
+  ipcMain.handle('tools:catalog', event => {
+    assertTrustedRenderer(event);
+    return toolRegistry.list();
+  });
+  ipcMain.handle('tools:audit', (event, limit) => {
+    assertTrustedRenderer(event);
+    return toolRegistry.getAudit(limit);
+  });
+  ipcMain.handle('tools:record', async (event, payload) => {
+    assertTrustedRenderer(event);
+    return toolRegistry.record(payload);
+  });
+}
+
 function configureConnectors() {
   connectors=createMcpService({app,dialog});
   ipcMain.handle('connectors:add',async(event,payload)=>{assertTrustedRenderer(event);return connectors.add(mainWindow,payload||{});});
@@ -414,6 +441,8 @@ app.whenReady().then(async()=>{
   configureCredentials();
   configureSystemMetrics();
   configureWorkspace();
+  configureToolRegistry();
+  await toolRegistry.load();
   ipcMain.handle('editor:open-window',event=>{assertTrustedRenderer(event);return createEditorWindow();});
   configureConnectors();
   configureBrowser();
