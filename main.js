@@ -318,9 +318,9 @@ function configureWorkspace() {
 }
 function configureToolRegistry() {
   toolRegistry = createToolRegistry({ app });
-  ipcMain.handle('tools:register', event => {
+  ipcMain.handle('tools:register', (event, definitions) => {
     assertTrustedRenderer(event);
-    return toolRegistry.register(arguments[1]);
+    return toolRegistry.register(definitions);
   });
   ipcMain.handle('tools:validate', (event, payload) => {
     assertTrustedRenderer(event);
