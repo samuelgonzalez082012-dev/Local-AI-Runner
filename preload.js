@@ -39,7 +39,15 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     getApiKey() { return ipcRenderer.invoke('credentials:get-api-key'); },
     setApiKey(value) { return ipcRenderer.invoke('credentials:set-api-key', value); }
   }),
-  editor: Object.freeze({ openWindow() { return ipcRenderer.invoke('editor:open-window'); } }),
+  editor: Object.freeze({
+    openWindow() { return ipcRenderer.invoke('editor:open-window'); },
+    getSync() { return ipcRenderer.invoke('editor:sync:get'); },
+    setSync(value) { ipcRenderer.send('editor:sync:set', value); },
+    onSync(callback) { return subscribe('editor:sync:update', callback); },
+    getPreferences() { return ipcRenderer.invoke('editor:preferences:get'); },
+    setPreferences(value) { return ipcRenderer.invoke('editor:preferences:set', value); },
+    onPreferences(callback) { return subscribe('editor:preferences:update', callback); }
+  }),
   tools: Object.freeze({
     register(definitions) { return ipcRenderer.invoke('tools:register', definitions); },
     validate(name, args) { return ipcRenderer.invoke('tools:validate', { name: String(name || ''), args }); },

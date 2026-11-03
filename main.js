@@ -27,6 +27,82 @@ let toolRegistry = null;
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
 const editorWindows = new Set();
+let editorSharedState = { tabs: [], active: '', origin: '' };
+const EDITOR_PREFERENCE_DEFAULTS = Object.freeze({
+  theme: 'midnight', fontFamily: 'cascadia', fontSize: 13, lineHeight: 1.6,
+  tabSize: 2, lineNumbers: true, background: '#0e131c', panel: '#151b26',
+  text: '#d5dbea', accent: '#91a8ef', keyword: '#c792ea', string: '#a5d6a7',
+  number: '#f2c879', comment: '#78869d'
+});
+let editorPreferences = { ...EDITOR_PREFERENCE_DEFAULTS };
+const editorPreferencesPath = path.join(app.getPath('userData'), 'editor-preferences.json');
+function normalizeEditorPreferences(input = {}) {
+  const next = { ...editorPreferences };
+  const themes = ['midnight','graphite','light','ocean','forest','custom'];
+  const fonts = ['cascadia','consolas','system','fira','jetbrains'];
+  if (themes.includes(input.theme)) next.theme = input.theme;
+  if (fonts.includes(input.fontFamily)) next.fontFamily = input.fontFamily;
+  if ([2,4,8].includes(Number(input.tabSize))) next.tabSize = Number(input.tabSize);
+  if (typeof input.lineNumbers === 'boolean') next.lineNumbers = input.lineNumbers;
+  if (Number.isFinite(Number(input.fontSize))) next.fontSize = Math.max(11, Math.min(22, Number(input.fontSize)));
+  if (Number.isFinite(Number(input.lineHeight))) next.lineHeight = Math.max(1.2, Math.min(2.2, Number(input.lineHeight)));
+  for (const key of ['background','panel','text','accent','keyword','string','number','comment']) {
+    if (typeof input[key] === 'string' && /^#[0-9a-f]{6}$/i.test(input[key])) next[key] = input[key];
+  }
+  return next;
+}
+function trustedEditorTargets(exceptId = null) {
+  const targets = [];
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.id !== exceptId) targets.push(mainWindow.webContents);
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (editorWindows.has(win.webContents.id) && !win.isDestroyed() && win.webContents.id !== exceptId) targets.push(win.webContents);
+  }
+  return targets;
+}
+function configureEditorBridge() {
+  ipcMain.handle('editor:sync:get', event => {
+    assertTrustedRenderer(event);
+    return { ...editorSharedState, preferences: { ...editorPreferences } };
+  });
+  ipcMain.on('editor:sync:set', (event, payload) => {
+    try {
+      assertTrustedRenderer(event);
+      if (!payload || !Array.isArray(payload.tabs) || payload.tabs.length > 40) throw new Error('Invalid editor synchronization state.');
+      let totalBytes = 0;
+      const tabs = payload.tabs.map(tab => {
+        if (!tab || typeof tab.path !== 'string' || tab.path.length > 500 || tab.path.startsWith('/') || tab.path.split(/[\\/]/).some(part => !part || part === '.' || part === '..')) throw new Error('Invalid editor tab path.');
+        if (typeof tab.content !== 'string' || Buffer.byteLength(tab.content, 'utf8') > 1_500_000) throw new Error('An editor tab exceeds the supported file size.');
+        totalBytes += Buffer.byteLength(tab.content, 'utf8');
+        if (totalBytes > 6_000_000) throw new Error('The combined editor tabs exceed the synchronization limit.');
+        return { path: tab.path, content: tab.content, dirty: !!tab.dirty };
+      });
+      const active = typeof payload.active === 'string' && tabs.some(tab => tab.path === payload.active) ? payload.active : '';
+      const origin = typeof payload.origin === 'string' ? payload.origin.slice(0, 80) : '';
+      editorSharedState = { tabs, active, origin };
+      for (const target of trustedEditorTargets(event.sender.id)) target.send('editor:sync:update', { ...editorSharedState, preferences: { ...editorPreferences } });
+    } catch (error) {
+      console.warn('Rejected editor synchronization update:', error.message);
+    }
+  });
+  ipcMain.handle('editor:preferences:get', event => {
+    assertTrustedRenderer(event);
+    return { ...editorPreferences };
+  });
+  ipcMain.handle('editor:preferences:set', async (event, value) => {
+    assertTrustedRenderer(event);
+    editorPreferences = normalizeEditorPreferences(value || {});
+    await fs.mkdir(path.dirname(editorPreferencesPath), { recursive: true });
+    await atomicWriteFile(editorPreferencesPath, JSON.stringify(editorPreferences, null, 2), { mode: 0o600 });
+    for (const target of trustedEditorTargets()) target.send('editor:preferences:update', { ...editorPreferences });
+    return { ...editorPreferences };
+  });
+  try {
+    const saved = JSON.parse(await fs.readFile(editorPreferencesPath, 'utf8'));
+    editorPreferences = normalizeEditorPreferences(saved);
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.warn('Could not load editor preferences:', error.message);
+  }
+}
 
 function isLocalHost(hostname) {
   return ['localhost','127.0.0.1','::1'].includes(String(hostname).replace(/^\[|\]$/g,''));
@@ -443,6 +519,7 @@ app.whenReady().then(async()=>{
   configureWorkspace();
   configureToolRegistry();
   await toolRegistry.load();
+  configureEditorBridge();
   ipcMain.handle('editor:open-window',event=>{assertTrustedRenderer(event);return createEditorWindow();});
   configureConnectors();
   configureBrowser();

@@ -590,3 +590,17 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .tool-audit-status.completed{color:var(--good);background:color-mix(in srgb,var(--good) 12%,transparent)}
 .tool-audit-status.failed,.tool-audit-status.blocked{color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent)}
 .tool-audit-error{flex:1 0 100%;overflow-wrap:anywhere}
+
+/* Browser and editor docks stay independent; both can remain open together. */
+.browser-dock{width:min(36%,560px);min-width:300px;max-width:560px;flex:0 1 36%}
+.editor-dock{width:min(36%,560px);min-width:300px;max-width:560px;flex:0 1 36%}
+#chatView.has-both-docks .browser-dock,#chatView.has-both-docks .editor-dock{width:min(32%,480px);min-width:260px;max-width:480px;flex-basis:32%}
+#chatView.has-both-docks .chat-column{min-width:360px}
+#chatView .browser-dock[hidden],#chatView .editor-dock[hidden]{display:none}
+@media(max-width:920px){
+ #chatView .browser-dock{position:fixed;z-index:30;top:60px;right:0;bottom:0;width:min(92vw,560px);max-width:none;min-width:0;flex:none}
+ #chatView .editor-dock{position:fixed;z-index:31;top:60px;left:0;right:auto;bottom:0;width:min(92vw,560px);max-width:none;min-width:0;flex:none}
+ #chatView.has-both-docks .browser-dock{right:0;left:auto;width:50vw;max-width:50vw;min-width:0}
+ #chatView.has-both-docks .editor-dock{left:0;right:auto;width:50vw;max-width:50vw;min-width:0}
+ #chatView.has-both-docks #editorDockRoot .editor-explorer{width:110px;flex-basis:110px}
+}
