@@ -2005,7 +2005,7 @@
 
 
   // ---------- navigation and local workspaces ----------
-  const VIEW_TITLES={chat:'Chats',projects:'Projects',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
+  const VIEW_TITLES={chat:'Chats',projects:'Projects',editor:'Code editor',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
   function navigate(view){
     if(!VIEW_TITLES[view])return;
     activeView=view;

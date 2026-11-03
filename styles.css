@@ -553,3 +553,20 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .composer-tools{flex-wrap:wrap;row-gap:4px;min-width:0}
 .composer-tools .btn{white-space:nowrap}
 .composer-actions{margin-left:auto;min-width:0}
+
+/* Shared code editor surfaces */
+.editor-dock{width:min(52%,820px);min-width:360px;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border);background:var(--panel)}
+.editor-dock[hidden]{display:none}
+#editorDockRoot{display:flex;flex:1;min-height:0;min-width:0;padding:8px}
+#editorDockRoot .editor-shell{width:100%;height:100%;min-height:0}
+#editorDockRoot .editor-explorer{width:145px;flex-basis:145px}
+#editorDockRoot .editor-toolbar{height:38px;flex-basis:38px}
+#editorDockRoot [data-action="popout"]{display:none}
+#editorView{overflow:hidden;display:none;flex-direction:column;gap:12px}
+#editorView.active{display:flex}
+#editorPageRoot{flex:1;min-height:0;display:flex}
+#editorPageRoot .editor-shell{width:100%;height:100%;min-height:350px}
+.project-editor-root{height:600px;max-height:70vh;margin-top:16px}
+.project-editor-root[hidden]{display:none}
+.project-editor-root .editor-shell{height:100%}
+@media(max-width:920px){.editor-dock{position:fixed;z-index:34;inset:60px 0 0;width:100%;min-width:0;border-left:0}.editor-dock[hidden]{display:none}}
