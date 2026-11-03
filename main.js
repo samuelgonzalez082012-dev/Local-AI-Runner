@@ -59,7 +59,7 @@ function trustedEditorTargets(exceptId = null) {
   }
   return targets;
 }
-function configureEditorBridge() {
+async function configureEditorBridge() {
   ipcMain.handle('editor:sync:get', event => {
     assertTrustedRenderer(event);
     return { ...editorSharedState, preferences: { ...editorPreferences } };
@@ -519,7 +519,7 @@ app.whenReady().then(async()=>{
   configureWorkspace();
   configureToolRegistry();
   await toolRegistry.load();
-  configureEditorBridge();
+  await configureEditorBridge();
   ipcMain.handle('editor:open-window',event=>{assertTrustedRenderer(event);return createEditorWindow();});
   configureConnectors();
   configureBrowser();

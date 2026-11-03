@@ -169,6 +169,7 @@ function mount(root){
   const control=event.target.closest('[data-pref]');if(control&&root.contains(control)){
    const key=control.dataset.pref;let value=control.type==='checkbox'?control.checked:control.type==='range'?Number(control.value):control.value;
    if(key==='tabSize')value=Number(value);
+   if(['background','panel','text','accent','keyword','string','number','comment'].includes(key))state.preferences.theme='custom';
    applyPreferences({[key]:value},true);
    const output=root.querySelector('[data-output="'+key+'"]');if(output)output.textContent=String(value)+(key==='fontSize'?' px':key==='lineHeight'?'×':'');
    return;
