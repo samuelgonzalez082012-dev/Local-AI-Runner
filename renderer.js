@@ -10,7 +10,7 @@
     chatsPos: 'left', settingsPos: 'right', chatsOpen: true, settingsOpen: false,
     sidebarWidth: 270, inspectorWidth: 322, maxWidth: 820, fontSize: 15, radius: 10,
     colorBg: '#0f1115', colorPanel: '#161922', colorText: '#e6e8ee', colorAccent: '#6c8cff',
-    toolsEnabled: false, allowFileWrites:false, confirmToolCalls:true, memoryEnabled:false,
+    toolsEnabled: false, allowFileWrites:false, confirmToolCalls:true, disabledTools:[], memoryEnabled:false,
     uiLanguage:'en', responseLanguage:'auto', voiceInputLanguage:'auto', fontFamily:'system', density:'comfortable', motion:'normal',
     themePreset:'midnight', showAvatars:true, showStats:true, autoRead:false, speechRate:1,
     browserEnabled:false, browserAskNewSites:true, browserAutoApprove:false, browserDock:false, maxAgentSteps:25, agentTimeoutMinutes:10, visionModel:''
@@ -304,6 +304,7 @@
     if (!['midnight','graphite','light','ocean','forest','custom'].includes(settings.themePreset)) settings.themePreset = 'midnight';
     settings.speechRate = clampNumber(settings.speechRate, .7, 1.5, 1);
     for (const key of ['allowFileWrites','memoryEnabled','showAvatars','showStats','autoRead','toolsEnabled','autoCompact','browserEnabled','browserAskNewSites','browserAutoApprove','browserDock']) settings[key] = Boolean(settings[key]);
+    settings.disabledTools = Array.isArray(settings.disabledTools) ? [...new Set(settings.disabledTools.filter(name => typeof name === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(name)))].slice(0, 300) : [];
     settings.confirmToolCalls = true;
     settings.maxAgentSteps = Math.round(clampNumber(settings.maxAgentSteps, 3, 300, 25));
     settings.agentTimeoutMinutes = Math.round(clampNumber(settings.agentTimeoutMinutes, 1, 120, 10));
@@ -1051,7 +1052,16 @@
   let pendingToolImages = [];
   const AGENT_ONLY_TOOLS = new Set(['update_plan', 'complete_step']);
   const hasBrowserBridge = () => !!window.localAI?.browser;
+  function toolDetails(name, source = 'builtin') {
+    if (source === 'mcp') return { category: 'external.connector', approval: 'Every call requires native approval', label: 'External MCP' };
+    if (name.startsWith('browser_')) return { category: 'browser', approval: 'Browser safety checks apply', label: 'Browser' };
+    if (['edit_workspace_file', 'create_project_file'].includes(name)) return { category: 'workspace.write', approval: 'Native confirmation and backup', label: 'Workspace write' };
+    if (name.includes('workspace')) return { category: 'workspace.read', approval: 'Read-only, confined to selected workspace', label: 'Workspace read' };
+    if (AGENT_ONLY_TOOLS.has(name)) return { category: 'agent.control', approval: 'Agent plan control', label: 'Agent control' };
+    return { category: 'app.read', approval: 'Read-only app data', label: 'App read' };
+  }
   function toolAllowed(name, agentMode) {
+    if (settings.disabledTools.includes(name)) return false;
     if (['edit_workspace_file', 'create_project_file'].includes(name)) return !!(agentMode && settings.allowFileWrites);
     if (name.startsWith('browser_')) return !!(agentMode && settings.browserEnabled && hasBrowserBridge());
     if (AGENT_ONLY_TOOLS.has(name)) return !!agentMode;
@@ -1473,39 +1483,74 @@
     renderBrowserState();
   }
 
-  function activeToolDefinitions(model, agentMode) {
+  const TOOL_PROVIDER_ADAPTERS = {
+    ollama(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; },
+    openai(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; }
+  };
+  async function activeToolDefinitions(model, agentMode) {
     if (!settings.toolsEnabled) return { definitions:[], remoteMap:new Map() };
     if(settings.backend==='ollama') {
       const info=capabilities.get(model);
       if(!info || !info.known || !info.tools) return { definitions:[], remoteMap:new Map() };
     }
-    const definitions=Object.values(TOOLS)
-      .filter(tool=>toolAllowed(tool.definition.name,agentMode))
-      .map(tool=>({type:'function',function:tool.definition}));
-    const remoteMap=new Map();
+    const canonical = [];
+    const remoteMap = new Map();
+    Object.values(TOOLS).filter(tool=>toolAllowed(tool.definition.name,agentMode)).forEach(tool=>{
+      const details=toolDetails(tool.definition.name);
+      canonical.push({definition:tool.definition,source:'builtin',category:details.category,approval:details.approval});
+    });
     (mcpServers||[]).forEach(server=>{
       (server.tools||[]).forEach(tool=>{
         if(!tool.name||server.error)return;
         const safeName=String(tool.name).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,40);
-        const functionName=`mcp_${server.id}_${safeName}`.slice(0,64);
-        if(remoteMap.has(functionName))return;
+        const functionName=('mcp_'+server.id+'_'+safeName).slice(0,64);
+        if(remoteMap.has(functionName)||TOOLS[functionName])return;
         remoteMap.set(functionName,{serverId:server.id,toolName:tool.name,serverName:server.name});
-        definitions.push({type:'function',function:{name:functionName,description:`External MCP tool from ${server.name}: ${String(tool.description||'').slice(0,350)}`,
-          parameters:tool.inputSchema&&typeof tool.inputSchema==='object'?tool.inputSchema:{type:'object',properties:{}}}});
+        canonical.push({
+          definition:{name:functionName,description:'External MCP tool from '+server.name+': '+String(tool.description||'').slice(0,350),
+            parameters:tool.inputSchema&&typeof tool.inputSchema==='object'?tool.inputSchema:{type:'object',properties:{}}},
+          source:'mcp',category:'external.connector',approval:'Every call requires native approval'
+        });
       });
     });
-    return { definitions, remoteMap };
+    const registration=await window.localAI.tools.register(canonical);
+    const registered=await window.localAI.tools.catalog();
+    const registeredNames=new Set(registered.map(item=>item.name));
+    if(registration.rejected) console.warn('Some tool definitions were excluded by the registry:',registration.errors);
+    const adapter=TOOL_PROVIDER_ADAPTERS[settings.backend]||TOOL_PROVIDER_ADAPTERS.openai;
+    const definitions=canonical.filter(item=>registeredNames.has(item.definition.name)).map(item=>adapter(item.definition));
+    const registeredRemote=new Map([...remoteMap].filter(([name])=>registeredNames.has(name)));
+    return {definitions,remoteMap:registeredRemote};
   }
 
-  async function runTool(name,args,remoteMap,chat,signal) {
+  async function runTool(name,args,remoteMap,chat,signal,agentMode) {
     const remote=remoteMap?.get(name);
-    if(remote) {
-      const result=await window.localAI.connectors.call({serverId:remote.serverId,toolName:remote.toolName,args:args||{}});
-      return JSON.stringify(result).slice(0,12000);
-    }
     const tool=TOOLS[name];
-    if(!tool) throw new Error(`Tool “${name}” is not available.`);
-    return String(await tool.run(args||{},{chat,signal,attachImage:image=>{pendingToolImages.push(...[].concat(image));}}));
+    const details=toolDetails(name,remote?'mcp':'builtin');
+    const started=Date.now();
+    let auditStatus='failed';
+    let auditError='';
+    try {
+      if(!settings.toolsEnabled) throw new Error('Tools are disabled in the Inspector.');
+      if(!toolAllowed(name,agentMode)) throw new Error('This tool is disabled or not permitted in the current mode.');
+      if(!remote&&!tool) throw new Error('Tool “'+name+'” is not available.');
+      const safeArgs=await window.localAI.tools.validate(name,args||{});
+      let result;
+      if(remote) {
+        result=await window.localAI.connectors.call({serverId:remote.serverId,toolName:remote.toolName,args:safeArgs});
+        result=JSON.stringify(result).slice(0,12000);
+      } else {
+        result=String(await tool.run(safeArgs,{chat,signal,attachImage:image=>{pendingToolImages.push(...[].concat(image));}}));
+      }
+      auditStatus='completed';
+      return result;
+    } catch(error) {
+      auditError=String(error?.message||error).slice(0,240);
+      throw error;
+    } finally {
+      window.localAI.tools.record({name,source:remote?'mcp':'builtin',category:details.category,status:auditStatus,durationMs:Date.now()-started,error:auditError})
+        .then(()=>renderToolAudit()).catch(error=>console.warn('Could not record tool activity:',error));
+    }
   }
 
   function normalizeToolArguments(value) {
@@ -1666,7 +1711,7 @@
         if (current() === chat) toast(`Could not compact older context: ${error.message}`);
       }
     }
-    const toolSet = activeToolDefinitions(model, agentMode);
+    const toolSet = await activeToolDefinitions(model, agentMode);
     const tools = toolSet.definitions;
     const roundLimit = agentMode ? settings.maxAgentSteps : 8;
     if (agentMode && !settings.toolsEnabled) {
@@ -1714,7 +1759,7 @@
         await waitWhilePaused(chat, signal);
         if (signal.aborted) { call.status = 'error'; call.result = 'Cancelled by user.'; continue; }
         try {
-          call.result = await runTool(call.name, call.args, toolSet.remoteMap, chat, signal);
+          call.result = await runTool(call.name, call.args, toolSet.remoteMap, chat, signal, agentMode);
           call.status = 'done';
         } catch (error) {
           call.result = `Tool error: ${error.message}`;
