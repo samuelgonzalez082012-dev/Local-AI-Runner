@@ -7,10 +7,10 @@ const { buildToolFallbackPrompt, parseToolFallbackResponse, MAX_CALLS } = requir
 test('builds a compact tool guide from canonical definitions', () => {
   const result = buildToolFallbackPrompt([
     { definition: { name: 'read_file', description: 'Read a file', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
-    { definition: { name: 'search_files', description: 'Search files', parameters: { type: 'object', properties: { query: { type: 'string' } } } }
+    { definition: { name: 'search_files', description: 'Search files', parameters: { type: 'object', properties: { query: { type: 'string' } } } } }
   ]);
   assert.match(result.prompt, /<tool_calls>/);
-  assert.deepEqual(result.names, ['read_file', 'search_file']);
+  assert.deepEqual(result.names, ['read_file', 'search_files']);
   assert.match(result.prompt, /"path"/);
 });
 
