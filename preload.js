@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     getApiKey() { return ipcRenderer.invoke('credentials:get-api-key'); },
     setApiKey(value) { return ipcRenderer.invoke('credentials:set-api-key', value); }
   }),
+  editor: Object.freeze({ openWindow() { return ipcRenderer.invoke('editor:open-window'); } }),
   workspace: Object.freeze({
     choose() { return ipcRenderer.invoke('workspace:choose'); },
     info() { return ipcRenderer.invoke('workspace:info'); },

@@ -24,15 +24,19 @@ let connectors = null;
 let browser = null;
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
+const editorWindows = new Set();
 
 function isLocalHost(hostname) {
   return ['localhost','127.0.0.1','::1'].includes(String(hostname).replace(/^\[|\]$/g,''));
 }
 function assertTrustedRenderer(event) {
-  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) throw new Error('Request rejected: untrusted renderer.');
+  const sender = event.sender;
+  const isMain = !!mainWindow && !mainWindow.isDestroyed() && sender === mainWindow.webContents;
+  const isEditor = editorWindows.has(sender.id) && !sender.isDestroyed();
   const frame = event.senderFrame;
   const frameUrl = frame?.url || '';
-  if (!frame || frame !== event.sender.mainFrame || !frameUrl.startsWith('file://') || !frameUrl.endsWith('/index.html')) throw new Error('Request rejected: untrusted frame.');
+  const expectedPage = isMain ? '/index.html' : '/editor.html';
+  if ((!isMain && !isEditor) || !frame || frame !== sender.mainFrame || !frameUrl.startsWith('file://') || !frameUrl.endsWith(expectedPage)) throw new Error('Request rejected: untrusted renderer.');
 }
 function normalizeModelRequest(options) {
   if (!options || typeof options !== 'object') throw new Error('Invalid model request.');
@@ -379,6 +383,16 @@ function configureScreenCapture() {
   });
 }
 
+function createEditorWindow() {
+  const editorWindow = new BrowserWindow({width:1320,height:900,minWidth:760,minHeight:520,backgroundColor:'#0d1118',show:false,title:'Local AI Runner — Code Editor',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  editorWindows.add(editorWindow.webContents.id);
+  editorWindow.once('ready-to-show',()=>editorWindow.show());
+  editorWindow.on('closed',()=>editorWindows.delete(editorWindow.webContents.id));
+  editorWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
+  editorWindow.loadFile(path.join(__dirname,'editor.html'));
+  return {opened:true};
+}
+
 function createWindow() {
   mainWindow=new BrowserWindow({width:1580,height:980,minWidth:760,minHeight:620,backgroundColor:'#0d1118',show:false,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   const ownerId=mainWindow.webContents.id;
@@ -400,6 +414,7 @@ app.whenReady().then(async()=>{
   configureCredentials();
   configureSystemMetrics();
   configureWorkspace();
+  ipcMain.handle('editor:open-window',event=>{assertTrustedRenderer(event);return createEditorWindow();});
   configureConnectors();
   configureBrowser();
   configureScreenCapture();
