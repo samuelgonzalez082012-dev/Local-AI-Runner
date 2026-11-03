@@ -59,7 +59,7 @@
   function t(key) { const language = settings.uiLanguage || 'en'; return TRANSLATIONS[language]?.[key] ?? TRANSLATIONS.en[key] ?? key; }
   function tf(key, values = {}) { return Object.entries(values).reduce((result,[name,value])=>result.replaceAll(`{${name}}`,String(value)),t(key)); }
 
-  const URL_DEFAULTS = { ollama: 'http://localhost:11434', openai: 'http://localhost:1234' };
+  const URL_DEFAULTS = { ollama: 'http://localhost:11434', openai: 'http://localhost:1234', anthropic: 'https://api.anthropic.com' };
   const TEXT_EXTENSIONS = new Set(['txt','md','csv','json','xml','html','htm','css','js','mjs','cjs','ts','tsx','jsx','py','java','cs','yaml','yml','log','sql','sh','ps1','toml','ini','cfg','go','rs','c','h','cpp','hpp','rb','php','swift','kt']);
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -287,7 +287,7 @@
     settings.inspectorWidth = clampNumber(settings.inspectorWidth, 280, 420, DEFAULTS.inspectorWidth);
     if (!['standard','bubbles','document'].includes(settings.messageStyle)) settings.messageStyle = 'standard';
     settings.speechVoice = String(settings.speechVoice || '');
-    settings.backend = settings.backend === 'openai' ? 'openai' : 'ollama';
+    settings.backend = ['openai','anthropic'].includes(settings.backend) ? settings.backend : 'ollama';
     settings.baseUrl = String(settings.baseUrl || URL_DEFAULTS[settings.backend]).trim();
     settings.apiKey = String(settings.apiKey || '');
     settings.chatsPos = settings.chatsPos === 'right' ? 'right' : 'left';
@@ -683,7 +683,10 @@
   function requestHeaders(method = 'GET') {
     const headers = { Accept: 'application/json' };
     if (method === 'POST') headers['Content-Type'] = 'application/json';
-    if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
+    if (settings.backend === 'anthropic') {
+      headers['anthropic-version'] = '2026-10-21';
+      if (settings.apiKey) headers['x-api-key'] = settings.apiKey;
+    } else if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
     return headers;
   }
 
@@ -932,7 +935,52 @@
     return output;
   }
 
+  function toAnthropicWire(messages) {
+    const systemParts = [];
+    const output = [];
+    const append = (role, blocks) => {
+      if (!blocks.length) return;
+      const previous = output[output.length - 1];
+      if (previous?.role === role && Array.isArray(previous.content)) previous.content.push(...blocks);
+      else output.push({ role, content: blocks });
+    };
+    for (const message of messages) {
+      if (message.role === 'system') {
+        if (message.content) systemParts.push(String(message.content));
+        continue;
+      }
+      if (message.role === 'user') {
+        const blocks = [];
+        if (message.content) blocks.push({ type: 'text', text: String(message.content) });
+        for (const image of message.images || []) {
+          const match = /^data:(image\/(?:jpeg|png|gif|webp));base64,([a-zA-Z0-9+/=]+)$/.exec(String(image || ''));
+          if (match) blocks.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } });
+        }
+        append('user', blocks.length ? blocks : [{ type: 'text', text: ' ' }]);
+        continue;
+      }
+      if (message.role === 'assistant') {
+        const blocks = [];
+        if (message.content) blocks.push({ type: 'text', text: String(message.content) });
+        for (const call of message.tool_calls || []) {
+          blocks.push({ type: 'tool_use', id: String(call.id || uid()), name: String(call.name), input: call.args && typeof call.args === 'object' && !Array.isArray(call.args) ? call.args : {} });
+        }
+        append('assistant', blocks.length ? blocks : [{ type: 'text', text: ' ' }]);
+        continue;
+      }
+      if (message.role === 'tool') {
+        append('user', [{
+          type: 'tool_result',
+          tool_use_id: String(message.tool_call_id || ''),
+          content: String(message.content || '')
+        }]);
+      }
+    }
+    return { system: systemParts.join('\n\n'), messages: output };
+  }
+
   function toWire(messages) {
+    if (settings.backend === 'anthropic') return toAnthropicWire(messages);
     if (settings.backend === 'ollama') {
       return messages.map(message => {
         if (message.role === 'user') {
@@ -1551,7 +1599,8 @@
 
   const TOOL_PROVIDER_ADAPTERS = {
     ollama(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; },
-    openai(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; }
+    openai(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; },
+    anthropic(definition) { return { name: definition.name, description: definition.description, input_schema: definition.parameters }; }
   };
   async function activeToolDefinitions(model, agentMode) {
     if (!settings.toolsEnabled) { await window.localAI.tools.register([]); return { definitions:[], remoteMap:new Map(), fallbackPrompt:'', fallbackNames:null }; }
@@ -1637,20 +1686,25 @@
     const result = { content: '', thinking: '', toolCalls: [], chunks: 0, evalCount: 0, evalDuration: 0, rawContent: '', reasoningField: '' };
     const partialCalls = new Map();
     const wireMessages = toWire(messages);
-    if(toolFallbackPrompt) wireMessages.unshift({role:'system',content:toolFallbackPrompt});
+    if(toolFallbackPrompt) {
+      if(settings.backend === 'anthropic') wireMessages.system = [wireMessages.system, toolFallbackPrompt].filter(Boolean).join('\n\n');
+      else wireMessages.unshift({role:'system',content:toolFallbackPrompt});
+    }
     const requestBody = settings.backend === 'ollama'
       ? { model, messages: wireMessages, stream: true, options: {
           temperature: settings.temp, top_p: settings.topP, repeat_penalty: settings.repeatPenalty,
           ...(settings.numCtx > 0 ? { num_ctx: settings.numCtx } : {}),
           ...(settings.maxTokens > 0 ? { num_predict: settings.maxTokens } : {})
         }, ...(tools.length ? { tools } : {}) }
-      : { model, messages: wireMessages, stream: true, temperature: settings.temp, top_p: settings.topP,
-          ...(settings.maxTokens > 0 ? { max_tokens: settings.maxTokens } : {}), ...(tools.length ? { tools } : {}) };
+      : settings.backend === 'anthropic'
+        ? { model, max_tokens: settings.maxTokens > 0 ? settings.maxTokens : 4096, messages: wireMessages.messages, ...(wireMessages.system ? { system: wireMessages.system } : {}), temperature: settings.temp, stream: true, ...(tools.length ? { tools } : {}) }
+        : { model, messages: wireMessages, stream: true, temperature: settings.temp, top_p: settings.topP,
+            ...(settings.maxTokens > 0 ? { max_tokens: settings.maxTokens } : {}), ...(tools.length ? { tools } : {}) };
     if (settings.backend === 'ollama') {
       const info = capabilities.get(model);
       if (info?.thinking) requestBody.think = settings.thinkMode !== 'off';
     }
-    const endpoint = settings.backend === 'ollama' ? '/api/chat' : '/v1/chat/completions';
+    const endpoint = settings.backend === 'ollama' ? '/api/chat' : settings.backend === 'anthropic' ? '/v1/messages' : '/v1/chat/completions';
     const request = { url: baseURL() + endpoint, method: 'POST', headers: requestHeaders('POST'), body: JSON.stringify(requestBody) };
 
     function refreshOutput() {
@@ -1684,6 +1738,35 @@
       let data;
       try { data = JSON.parse(payload); } catch (_) { return; }
       if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+      if(settings.backend === 'anthropic') {
+        if(data.type === 'content_block_start') {
+          const block = data.content_block || {};
+          if(block.type === 'tool_use' && typeof block.name === 'string') partialCalls.set(data.index, { id: block.id || uid(), name: block.name, arguments: '', input: block.input || {} });
+        } else if(data.type === 'content_block_delta') {
+          const delta = data.delta || {};
+          if(delta.type === 'text_delta' && delta.text) result.rawContent += delta.text;
+          else if(delta.type === 'thinking_delta' && delta.thinking) result.reasoningField += delta.thinking;
+          else if(delta.type === 'input_json_delta') {
+            const current = partialCalls.get(data.index);
+            if(current) current.arguments += delta.partial_json || '';
+          }
+        } else if(data.type === 'content_block_stop') {
+          const current = partialCalls.get(data.index);
+          if(current) {
+            let args = current.input;
+            if(current.arguments) {
+              try { args = JSON.parse(current.arguments); }
+              catch (_) { throw new Error('Anthropic returned invalid JSON for tool '+current.name+'.'); }
+            }
+            result.toolCalls.push({ id: current.id, name: current.name, args: normalizeToolArguments(args) });
+            partialCalls.delete(data.index);
+          }
+        } else if(data.type === 'message_delta') {
+          if(Number.isFinite(data.usage?.output_tokens)) result.evalCount = data.usage.output_tokens;
+        }
+        if(data.type !== 'ping' && data.type !== 'message_stop') notify();
+        return;
+      }
       const delta = data.choices?.[0]?.delta;
       if (!delta) return;
       if (delta.reasoning_content) result.reasoningField += delta.reasoning_content;
@@ -1756,7 +1839,7 @@
         if (signal?.aborted) reader.cancel().catch(() => {});
       }
     }
-    [...partialCalls.entries()].sort((a,b) => a[0] - b[0]).forEach(([, call]) => {
+    if(settings.backend !== 'anthropic') [...partialCalls.entries()].sort((a,b) => a[0] - b[0]).forEach(([, call]) => {
       result.toolCalls.push({ id: call.id, name: call.name, args: normalizeToolArguments(call.arguments) });
     });
     refreshOutput();
@@ -2900,7 +2983,7 @@
     };
 
     on('backend', 'change', event => {
-      settings.backend = event.target.value === 'openai' ? 'openai' : 'ollama';
+      settings.backend = ['openai','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
       settings.baseUrl = URL_DEFAULTS[settings.backend];
       $('baseUrl').value = settings.baseUrl;
       approvedModelServer = '';

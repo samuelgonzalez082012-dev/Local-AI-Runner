@@ -123,7 +123,7 @@ function normalizeModelRequest(options) {
   if (!['http:','https:'].includes(url.protocol)) throw new Error('Only HTTP and HTTPS model servers are supported.');
   if (url.search || url.hash) throw new Error('Model server endpoints cannot contain query strings or fragments.');
   if (url.protocol === 'http:' && !isLocalHost(url.hostname)) throw new Error('Remote model servers must use HTTPS. HTTP is only allowed for localhost.');
-  const allowedPath = /^\/(api\/(tags|show|chat|ps)|v1\/(models|chat\/completions))\/?$/;
+  const allowedPath = /^\/(api\/(tags|show|chat|ps)|v1\/(models|chat\/completions|messages))\/?$/;
   if (!allowedPath.test(url.pathname)) throw new Error('This endpoint is not part of the supported model-server API.');
   const origin = url.origin;
   if (!isLocalHost(url.hostname) && !approvedModelOrigins.has(origin)) throw new Error('This remote model server has not been approved in this session.');
@@ -133,7 +133,7 @@ function normalizeModelRequest(options) {
   const headers = {};
   for (const [name,value] of Object.entries(options.headers || {})) {
     const key = name.toLowerCase();
-    if (['content-type','authorization','accept'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
+    if (['content-type','authorization','accept','x-api-key','anthropic-version'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
   }
   const body = options.body == null ? undefined : String(options.body);
   if (method === 'GET' && body) throw new Error('GET model requests cannot include a body.');
