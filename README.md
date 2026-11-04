@@ -2,6 +2,14 @@
 
 Local AI Runner is an Electron desktop app for chatting with locally hosted language models and organizing related documents, projects, memories and bounded work tasks.
 
+## Code editor
+
+The shared code editor is available as a full workspace page, a dock beside chat, and a separate Electron window. Open **Code editor** from the navigation, or use the **Editor** control beside the chat composer. The views share open tabs and editor preferences.
+
+The editor includes a VS Code-inspired activity rail, file explorer, workspace-wide text search, tabs with unsaved indicators, syntax-coloured editing, line and cursor status, an output panel, and customizable themes and typography. The AI assistant can explain, debug, refactor, design tests for, or review the selected code (or the active file when no selection exists). AI responses are sent through the configured model in chat; the editor does not silently apply AI-generated changes. Review suggestions and save changes explicitly.
+
+Workspace saves continue to use the app's existing workspace writer and backup behavior. This editor build uses the existing lightweight in-app editing surface; it does not yet bundle the Monaco editor engine or language-server integrations.
+
 ## Requirements
 
 - Windows, macOS or Linux
@@ -40,6 +48,10 @@ The app does not download models. Install and manage models using your inference
 Open **Inspector → Tools** to enable the tool system and manage individual built-in or connected MCP tools. Each registered tool has a validated JSON Schema; arguments are checked again immediately before execution. Workspace writes continue to require the app's native confirmation and backup flow. MCP calls keep their connector approval checks.
 
 The recent activity list stores tool names, source, category, result status, timing and a short error message. It does not store tool arguments, prompts or file contents. The local audit file is kept in the app's user-data folder.
+
+Built-in model tools include local conversation/workspace search, project-document context, bounded CSV/JSON summaries, workspace file listing/reading/search, file creation and editing with confirmation, browser interaction and DuckDuckGo web search, and agent planning. Web search runs in the visible integrated browser, sends the query to DuckDuckGo, and follows the browser's site-approval safeguards. Models can also list/create projects, list/save/delete memories, list/create reusable workflows, and save, schedule or start tasks/workflows. Persistent changes and task runs require an in-app confirmation; scheduled tasks only run while the app is open. Voice input/output, screen snapshots and vision routing are available through their app features. Models without native function calling use the validated structured tool-request fallback.
+
+This is a local desktop workspace, not a clone of hosted ChatGPT or Claude services. Tabular analysis is a bounded local summary (not arbitrary Python execution); connected apps require an MCP server; cloud research, GPT/skill marketplaces, hosted image generation, remote agents and general desktop control need separate providers or integrations and are not implied by the built-in tools.
 
 ## Integrated browser and Cowork agent (1.3.0)
 

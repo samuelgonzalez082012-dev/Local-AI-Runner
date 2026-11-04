@@ -5,8 +5,8 @@
   else root.LocalAIRunnerToolFallback = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
-  const MAX_TOOLS = 28;
-  const MAX_PROMPT_CHARS = 18000;
+  const MAX_TOOLS = 48;
+  const MAX_PROMPT_CHARS = 36000;
   const MAX_CALLS = 8;
   const isObject = value => !!value && typeof value === 'object' && !Array.isArray(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 

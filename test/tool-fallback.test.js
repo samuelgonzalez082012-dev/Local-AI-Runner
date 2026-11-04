@@ -14,6 +14,15 @@ test('builds a compact tool guide from canonical definitions', () => {
   assert.match(result.prompt, /"path"/);
 });
 
+test('keeps the expanded local tool catalog available to fallback models', () => {
+  const definitions = Array.from({ length: 32 }, (_, index) => ({
+    definition: { name: `tool_${index}`, description: 'A local tool', parameters: { type: 'object', properties: {} } }
+  }));
+  const result = buildToolFallbackPrompt(definitions);
+  assert.equal(result.names.length, 32);
+  assert.equal(result.names[31], 'tool_31');
+});
+
 test('extracts structured calls and removes the execution block from visible output', () => {
   const source = 'I will check that now.\n<tool_calls>\n{"calls":[{"name":"read_file","arguments":{"path":"README.md"}}]}\n </tool_calls>';
   const parsed = parseToolFallbackResponse(source);

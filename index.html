@@ -10,8 +10,10 @@
   <link rel="stylesheet" href="editor-components.css">
   <script src="anthropic-adapter.js" defer></script>
   <script src="tool-fallback.js" defer></script>
+  <script src="data-analysis.js" defer></script>
   <script src="renderer.js" defer></script>
   <script src="dock-resize.js" defer></script>
+  <script src="editor-highlighter.js" defer></script>
   <script src="editor-ui.js" defer></script>
 </head>
 <body data-chats="left" data-settings="right" data-density="comfortable">
@@ -27,7 +29,7 @@
       <nav id="primaryNav" class="primary-nav" aria-label="Workspace sections">
         <button class="nav-item active" data-view="chat"><span class="nav-icon">◫</span><span>Chats</span><span id="chatCount" class="nav-count"></span></button>
         <button class="nav-item" data-view="projects"><span class="nav-icon">▦</span><span>Projects</span></button>
-        <button class="nav-item" data-view="editor"><span class="nav-icon">⌘</span><span>Code editor</span></button>
+        <button class="nav-item" data-view="editor" aria-label="Code editor"><span class="nav-icon">⌘</span><span>Code editor</span></button>
         <button class="nav-item" data-view="models"><span class="nav-icon">◈</span><span>Models</span></button>
         <button class="nav-item" data-view="browser"><span class="nav-icon">◍</span><span>Browser</span></button>
         <button class="nav-item" data-view="tasks"><span class="nav-icon">◷</span><span>Tasks</span><span id="taskCount" class="nav-count"></span></button>

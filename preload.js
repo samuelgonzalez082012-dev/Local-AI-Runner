@@ -46,7 +46,9 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     onSync(callback) { return subscribe('editor:sync:update', callback); },
     getPreferences() { return ipcRenderer.invoke('editor:preferences:get'); },
     setPreferences(value) { return ipcRenderer.invoke('editor:preferences:set', value); },
-    onPreferences(callback) { return subscribe('editor:preferences:update', callback); }
+    onPreferences(callback) { return subscribe('editor:preferences:update', callback); },
+    askAI(prompt) { ipcRenderer.send('editor:ai-request', String(prompt || '').slice(0, 30000)); },
+    onAIRequest(callback) { return subscribe('editor:ai-request', callback); }
   }),
   tools: Object.freeze({
     register(definitions) { return ipcRenderer.invoke('tools:register', definitions); },

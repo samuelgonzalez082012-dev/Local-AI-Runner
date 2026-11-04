@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.4.2 — VS Code-style editor workbench polish
+
+- Updated the editor workbench to a VS Code-inspired dark palette, compact title bar, activity rail, Explorer, tabs, breadcrumbs, output area, and status bar.
+- Added prominent, language-colored file glyphs for HTML, JavaScript, TypeScript, CSS, JSON, Python, Java, C/C++, C#, Markdown, YAML, SQL, Rust, Go, PHP, Ruby, shell, and common configuration formats.
+- Changed the Explorer from single-folder navigation to an expandable, nested folder tree with lazy directory loading.
+- Added collapsible editor tabs, horizontal tab scrolling, active-tab state, and middle-click tab closing.
+- Kept the existing workspace, save/backup, AI chat bridge, search, preferences, and detached editor integration intact.
+- Automated tests: 43 passing. Electron GUI smoke testing is still required on a machine with dependencies installed.
+
+## 1.4.1 — Editor workspace improvements
+
+- Reworked the shared editor shell with a VS Code-inspired activity rail, Explorer/search area, editor breadcrumbs, output panel, and AI assistant sidebar.
+- Added workspace-wide text search with bounded results and direct navigation to matching lines.
+- Added editor-to-chat AI actions for explaining, debugging, refactoring, test design, and code review. Selected code is preferred; otherwise the active file is included.
+- Routed editor AI requests through a validated Electron IPC bridge so the pop-out window reuses the main app's configured model and credentials.
+- Kept AI output advisory-only: suggestions appear in chat and are not written to project files automatically.
+- Fixed malformed Save button markup and improved editor status feedback.
+- Added Ctrl/Cmd+P quick-open, Ctrl/Cmd+F in-file find, Ctrl/Cmd+Shift+F workspace search, Ctrl/Cmd+S save, and line-aware Tab / Shift+Tab indentation.
+- Added regression coverage for editor wiring and workspace search. Automated suite: 43 tests passing.
+
 ## 1.4.0 — Game-speed browser and auto-approve
 
 - Added **Auto-approve browser actions** (Inspector → Tools). When on, the assistant does not ask before submitting forms, clicking risky buttons, running page scripts or visiting new public sites. Turning it on shows a warning first. Passwords, payment and one-time-code fields are still never filled, and addresses on your own network still ask.

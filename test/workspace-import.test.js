@@ -49,3 +49,24 @@ test('folder-backed project roots must resolve to existing directories', async (
     await fs.rm(base, { recursive: true, force: true });
   }
 });
+
+
+test('workspace search finds case-insensitive matches with stable line metadata', async () => {
+  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'local-ai-search-test-'));
+  const workspacePath = path.join(base, 'workspace');
+  try {
+    await fs.mkdir(path.join(workspacePath, 'src'), { recursive: true });
+    await fs.writeFile(path.join(workspacePath, 'src', 'app.js'), 'const first = 1;\nfunction FindMe() {\n  return first;\n}\n', 'utf8');
+    await fs.writeFile(path.join(workspacePath, 'README.md'), 'Nothing relevant here.\n', 'utf8');
+    const workspace = createWorkspaceService({ dialog: {}, app: { getPath: () => path.join(base, 'user-data') } });
+    await workspace.setFolder(workspacePath);
+    const result = await workspace.search('findme');
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].path, 'src/app.js');
+    assert.equal(result.results[0].line, 2);
+    assert.match(result.results[0].excerpt, /FindMe/);
+    await assert.rejects(() => workspace.search('x'), /at least two characters/i);
+  } finally {
+    await fs.rm(base, { recursive: true, force: true });
+  }
+});

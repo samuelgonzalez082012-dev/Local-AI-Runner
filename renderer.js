@@ -16,7 +16,7 @@
     browserEnabled:false, browserAskNewSites:true, browserAutoApprove:false, browserDock:false, maxAgentSteps:25, agentTimeoutMinutes:10, visionModel:''
   };
   const TRANSLATIONS = {
-    en: {connectionPageIntro:'Configure your model server, choose a workspace for file-aware tasks and register approved MCP servers.',modelServerHeading:'Model server',fileWorkspaceHeading:'File workspace',workspaceBackupsHeading:'Workspace backups',externalToolServersHeading:'External tool servers (MCP)',chooseFolder:'Choose folder',connectRefreshButton:'Connect / refresh',noMeasurement:'No measurement yet', chat:'Chats',projects:'Projects',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings',newChat:'New chat',workspace:'WORKSPACE',local:'LOCAL WORKSPACE',
+    en: {connectionPageIntro:'Configure your model server, choose a workspace for file-aware tasks and register approved MCP servers.',modelServerHeading:'Model server',fileWorkspaceHeading:'File workspace',workspaceBackupsHeading:'Workspace backups',externalToolServersHeading:'External tool servers (MCP)',chooseFolder:'Choose folder',connectRefreshButton:'Connect / refresh',noMeasurement:'No measurement yet', chat:'Chats',projects:'Projects',editor:'Code editor',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings',newChat:'New chat',workspace:'WORKSPACE',local:'LOCAL WORKSPACE',
       recentChats:'RECENT CHATS',archivedChats:'ARCHIVED CHATS',filterConversations:'Filter conversations',privateWorkspace:'PRIVATE AI WORKSPACE',projectsIntro:'Keep conversations, documents and project instructions together.',newProject:'＋ New project',organizeWork:'ORGANIZE YOUR WORK',noProjects:'No projects yet',createProjectHint:'Create a project to keep documents, notes and project-specific chats together.',projectWorkspace:'Project workspace',documents:'documents',chatsCount:'chats',updated:'Updated',noProjectDocs:'No documents added to this project yet.',addDocuments:'＋ Add documents',summarizeKnowledge:'Summarize knowledge',openProjectChat:'Open project chat',removeDocument:'Remove document',
       localInference:'LOCAL INFERENCE',modelsIntro:'Inspect installed models, compare response speed and see which capabilities are available. Model downloading is intentionally not included.',refreshModels:'↻ Refresh models',noModels:'No installed models detected',connectRefresh:'Connect your model server and refresh. Model downloading is intentionally not included.',localModel:'Local model',sizeUnavailable:'Size unavailable',vision:'Vision',thinking:'Thinking',tools:'Tools',includeComparison:'Include in comparison',useModel:'Use this model',modelComparison:'Model comparison',runComparison:'Run comparison',comparisonPrompt:'Comparison prompt',noComparison:'No comparison has been run yet.',runtimeInfo:'Runtime information',runtimeDisclaimer:'Reported by the configured backend; hardware metrics depend on the server.',refresh:'Refresh',
       automation:'AUTOMATION',tasksIntro:'Save repeatable tasks, run bounded work sessions and review task history.',newTask:'＋ New task',all:'All',active:'Active',scheduled:'Scheduled',completed:'Completed',noTasks:'No tasks in this view',createTaskHint:'Create a task to save repeatable instructions or schedule work while the app is open.',created:'Created',runs:'runs',workflow:'Workflow',running:'Running',run:'Run',stop:'Stop',delete:'Delete',reusableWorkflows:'Reusable workflows',workflowIntro:'Build repeatable, multi-step instructions you can run or schedule.',createWorkflow:'＋ Create workflow',noWorkflows:'No reusable workflows yet. Create one to save a sequence of instructions you can run again.',
@@ -1019,6 +1019,321 @@
         return JSON.stringify({ title: chat.title, model: chat.model, messages: chat.messages.slice(-count).map(message => ({ role: message.role, content: String(message.content || '').slice(0, 1500) })) }, null, 2);
       }
     },
+    search_local_content: {
+      definition: {
+        name: 'search_local_content',
+        description: 'Search locally saved conversations, project documents, tasks and memories. Read-only; results are local app data, not web search.',
+        parameters: { type: 'object', properties: { query: { type: 'string', minLength: 2, maxLength: 200 }, limit: { type: 'integer', minimum: 1, maximum: 10 } }, required: ['query'], additionalProperties: false }
+      },
+      run: async args => {
+        const query = String(args.query || '').trim().toLowerCase();
+        if (query.length < 2) throw new Error('Use at least two characters to search local content.');
+        const terms = [...new Set(query.split(/[^\p{L}\p{N}_-]+/u).filter(term => term.length > 1))];
+        const bySource = new Map();
+        contentIndex().forEach(entry => {
+          const title = String(entry.title || '').toLowerCase();
+          const body = String(entry.text || '').toLowerCase();
+          let score = title.includes(query) ? 12 : 0;
+          let position = body.indexOf(query);
+          if (position >= 0) score += 10;
+          for (const term of terms) {
+            if (title.includes(term)) score += 8;
+            const termPosition = body.indexOf(term);
+            if (termPosition >= 0) {
+              if (position < 0 || termPosition < position) position = termPosition;
+              score += 2;
+            }
+          }
+          if (!score) return;
+          const result = {
+            type: entry.type, title: entry.title, role: entry.role,
+            excerpt: String(entry.text || '').slice(Math.max(0, (position < 0 ? 0 : position) - 100), (position < 0 ? 0 : position) + 240),
+            score, updated: entry.date || null,
+            source: [entry.type, entry.chatId || '', entry.projectId || '', entry.taskId || '', entry.memoryId || '', entry.title].join('|')
+          };
+          const previous = bySource.get(result.source);
+          if (!previous || result.score > previous.score) bySource.set(result.source, result);
+        });
+        const results = [...bySource.values()].sort((a, b) => b.score - a.score || (b.updated || 0) - (a.updated || 0));
+        return JSON.stringify({ scope: 'local app data', results: results.slice(0, Math.round(clampNumber(args.limit, 1, 10, 5))) }, null, 2);
+      }
+    },
+    get_current_project_context: {
+      definition: {
+        name: 'get_current_project_context',
+        description: 'Read the project linked to the current conversation (or the open project), including its description and bounded excerpts from its saved documents.',
+        parameters: { type: 'object', properties: { max_characters: { type: 'integer', minimum: 500, maximum: 12000 } }, additionalProperties: false }
+      },
+      run: async (args, context) => {
+        const chat = context?.chat || current();
+        const projectId = chat?.projectId || activeProjectId;
+        const project = projects.find(entry => entry.id === projectId);
+        if (!project) return 'No project is linked to this conversation or currently open.';
+        let remaining = Math.round(clampNumber(args.max_characters, 500, 12000, 6000));
+        const documents = (project.documents || []).map(document => {
+          if (remaining <= 0) return { name: document.name, excerpt: '[Excerpt limit reached]' };
+          const excerpt = String(document.text || '').slice(0, remaining);
+          remaining -= excerpt.length;
+          return { name: document.name, excerpt };
+        });
+        return JSON.stringify({
+          name: project.name, description: project.description || '',
+          folderLinked: !!project.folderPath, documentCount: (project.documents || []).length, documents
+        }, null, 2);
+      }
+    },
+    list_local_projects: {
+      definition: {
+        name: 'list_local_projects',
+        description: 'List locally saved projects, their descriptions, document counts and linked folders. Read-only.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false }
+      },
+      run: async () => JSON.stringify(projects.slice(0, 25).map(project => ({
+        id: project.id, name: project.name, description: String(project.description || '').slice(0, 200),
+        documentCount: (project.documents || []).length, folderLinked: !!project.folderPath,
+        linkedConversationCount: conversations.filter(chat => chat.projectId === project.id).length
+      })), null, 2)
+    },
+    create_local_project: {
+      definition: {
+        name: 'create_local_project',
+        description: 'Create a new local project container. It does not create or modify any files. Requires user confirmation.',
+        parameters: { type: 'object', properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, description: { type: 'string', maxLength: 500 } }, required: ['name'], additionalProperties: false }
+      },
+      run: async args => {
+        const name = String(args.name || '').trim();
+        if (!name) throw new Error('A project name is required.');
+        if (projects.length >= 500) throw new Error('The local project limit has been reached.');
+        const description = String(args.description || '').trim();
+        const approved = await confirmAction({
+          title: 'Create local project?', message: `Create “${name.slice(0, 80)}”?`,
+          detail: 'This creates an empty project container in Local AI Runner. It does not create files or access a folder.',
+          acceptLabel: 'Create project', danger: false
+        });
+        if (!approved) return 'Project creation was cancelled.';
+        const project = { id: uid(), name: name.slice(0, 80), description: description.slice(0, 500), documents: [], created: Date.now(), updated: Date.now() };
+        const next = [project, ...projects];
+        await database.set('projects', next);
+        projects = next;
+        renderProjects();
+        return JSON.stringify({ created: true, id: project.id, name: project.name });
+      }
+    },
+    list_local_memories: {
+      definition: {
+        name: 'list_local_memories',
+        description: 'List saved local memories and whether memory injection is enabled. Read-only; memory text is returned only when explicitly requested by the model.',
+        parameters: { type: 'object', properties: { include_text: { type: 'boolean' } }, additionalProperties: false }
+      },
+      run: async args => JSON.stringify({
+        memoryInjectionEnabled: !!settings.memoryEnabled,
+        memories: memories.slice(0, 25).map(memory => ({
+          id: memory.id, title: memory.title, enabled: memory.enabled !== false,
+          ...(args.include_text ? { text: String(memory.text || '').slice(0, 600) } : {})
+        }))
+      }, null, 2)
+    },
+    save_local_memory: {
+      definition: {
+        name: 'save_local_memory',
+        description: 'Save a user-approved preference or fact as persistent local memory. Requires user confirmation; saved memory is only added to future prompts if memory is enabled in settings.',
+        parameters: { type: 'object', properties: { title: { type: 'string', minLength: 1, maxLength: 100 }, text: { type: 'string', minLength: 1, maxLength: 2000 } }, required: ['title', 'text'], additionalProperties: false }
+      },
+      run: async args => {
+        const title = String(args.title || '').trim();
+        const text = String(args.text || '').trim();
+        if (!title || !text) throw new Error('A memory title and text are required.');
+        if (memories.length >= 2000) throw new Error('The saved-memory limit has been reached.');
+        const approved = await confirmAction({
+          title: 'Save local memory?', message: `Save “${title.slice(0, 100)}”?`,
+          detail: `This information will remain on this device.${settings.memoryEnabled ? ' Memory injection is enabled.' : ' Memory injection is currently disabled in settings.'}`,
+          acceptLabel: 'Save memory', danger: false
+        });
+        if (!approved) return 'Memory save was cancelled.';
+        const memory = { id: uid(), title: title.slice(0, 100), text: text.slice(0, 2000), created: Date.now(), enabled: true };
+        const next = [memory, ...memories];
+        await database.set('memories', next);
+        memories = next;
+        renderMemory();
+        return JSON.stringify({ saved: true, id: memory.id, title: memory.title, memoryInjectionEnabled: !!settings.memoryEnabled });
+      }
+    },
+    delete_local_memory: {
+      definition: {
+        name: 'delete_local_memory',
+        description: 'Permanently remove a saved local memory by ID. Requires user confirmation.',
+        parameters: { type: 'object', properties: { id: { type: 'string', minLength: 1, maxLength: 100 } }, required: ['id'], additionalProperties: false }
+      },
+      run: async args => {
+        const memory = memories.find(entry => entry.id === args.id);
+        if (!memory) throw new Error('That saved memory no longer exists.');
+        const approved = await confirmAction({
+          title: 'Delete saved memory?', message: `Delete “${memory.title}”?`,
+          detail: 'This cannot be undone. The memory will be removed from local storage and future prompts.',
+          acceptLabel: 'Delete memory'
+        });
+        if (!approved) return 'Memory deletion was cancelled.';
+        const next = memories.filter(entry => entry.id !== memory.id);
+        await database.set('memories', next);
+        memories = next;
+        renderMemory();
+        return JSON.stringify({ deleted: true, id: memory.id, title: memory.title });
+      }
+    },
+    list_local_tasks: {
+      definition: {
+        name: 'list_local_tasks',
+        description: 'List saved and scheduled local work tasks with their status and run time. Read-only.',
+        parameters: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 30 } }, additionalProperties: false }
+      },
+      run: async args => JSON.stringify(tasks.slice(0, Math.round(clampNumber(args.limit, 1, 30, 20))).map(task => ({
+        id: task.id, title: task.title, status: task.status, due: task.due ? new Date(task.due).toISOString() : null,
+        runs: task.runs || 0, projectId: task.projectId || null,         prompt: String(task.prompt || '').slice(0, 300)
+      })), null, 2)
+    },
+    list_reusable_workflows: {
+      definition: {
+        name: 'list_reusable_workflows',
+        description: 'List saved local workflows (reusable multi-step instructions), including their step titles and prompts. Read-only.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false }
+      },
+      run: async () => JSON.stringify(workflows.slice(0, 10).map(workflow => ({
+        id: workflow.id, name: workflow.name, description: workflow.description || '',
+        steps: (workflow.steps || []).slice(0, 12).map(step => ({ title: step.title, prompt: String(step.prompt || '').slice(0, 250) }))
+      })), null, 2)
+    },
+    create_reusable_workflow: {
+      definition: {
+        name: 'create_reusable_workflow',
+        description: 'Save a reusable local multi-step workflow, similar to a custom assistant prompt. Each step runs in order when the workflow is started. Requires user confirmation.',
+        parameters: { type: 'object', properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          description: { type: 'string', maxLength: 300 },
+          steps: { type: 'array', minItems: 1, maxItems: 12, items: { type: 'object', properties: {
+            title: { type: 'string', minLength: 1, maxLength: 80 },
+            prompt: { type: 'string', minLength: 1, maxLength: 3000 }
+          }, required: ['title', 'prompt'], additionalProperties: false } }
+        }, required: ['name', 'steps'], additionalProperties: false }
+      },
+      run: async args => {
+        const name = String(args.name || '').trim();
+        const steps = (args.steps || []).map(step => ({ title: String(step.title || '').trim(), prompt: String(step.prompt || '').trim() }));
+        if (!name || !steps.length || steps.length > 12 || steps.some(step => !step.title || !step.prompt)) throw new Error('Provide a name and 1–12 complete workflow steps.');
+        if (workflows.length >= 1000) throw new Error('The saved-workflow limit has been reached.');
+        const description = String(args.description || '').trim().slice(0, 300);
+        const approved = await confirmAction({
+          title: 'Save reusable workflow?', message: name.slice(0, 100),
+          detail: `${steps.length} ordered steps will be stored locally. Starting this workflow later creates a task that can use enabled tools and their normal approvals.`,
+          acceptLabel: 'Save workflow', danger: false
+        });
+        if (!approved) return 'Workflow creation was cancelled.';
+        const workflow = { id: uid(), name: name.slice(0, 100), description, steps, created: Date.now(), updated: Date.now() };
+        const next = [workflow, ...workflows];
+        await database.set('workflows', next);
+        workflows = next;
+        renderWorkflowList();
+        return JSON.stringify({ created: true, id: workflow.id, name: workflow.name, steps: steps.length });
+      }
+    },
+    create_local_task: {
+      definition: {
+        name: 'create_local_task',
+        description: 'Create a saved task for later, schedule it to run while the app is open, or ask to run it after the current response finishes. Running can invoke enabled tools and may require additional approvals. Requires user confirmation.',
+        parameters: { type: 'object', properties: {
+          title: { type: 'string', minLength: 1, maxLength: 100 },
+          instructions: { type: 'string', minLength: 1, maxLength: 12000 },
+          run_at: { type: 'string', maxLength: 80, description: 'Optional future date/time in ISO 8601 format. The app must remain open at that time.' },
+          start_after_response: { type: 'boolean', description: 'If true and run_at is omitted, start the task after the current model response completes.' },
+          project_id: { type: 'string', maxLength: 100, description: 'Optional existing project ID to link to this task.' }
+        }, required: ['title', 'instructions'], additionalProperties: false }
+      },
+      run: async args => {
+        const title = String(args.title || '').trim();
+        const prompt = String(args.instructions || '').trim();
+        if (!title || !prompt) throw new Error('A task title and instructions are required.');
+        if (tasks.length >= 5000) throw new Error('The local task limit has been reached.');
+        const projectId = String(args.project_id || '').trim() || null;
+        if (projectId && !projects.some(project => project.id === projectId)) throw new Error('The requested project does not exist.');
+        const runAt = args.run_at ? Date.parse(args.run_at) : null;
+        if (args.run_at && (!Number.isFinite(runAt) || runAt <= Date.now())) throw new Error('Choose a valid future run_at time.');
+        if (runAt && args.start_after_response) throw new Error('Choose either a scheduled time or start_after_response, not both.');
+        if (!runAt && args.start_after_response && !settings.model && !modelNames.length) throw new Error('Connect and select a model before asking to start this task.');
+        const approved = await confirmAction({
+          title: runAt ? 'Schedule local task?' : args.start_after_response ? 'Run local task after this response?' : 'Save local task?',
+          message: title.slice(0, 100),
+          detail: runAt
+            ? `This task will start at ${new Date(runAt).toLocaleString()} if Local AI Runner is open. It may use enabled browser/workspace tools and their approvals.`
+            : args.start_after_response
+              ? 'The task will start after this response finishes, using the currently selected model and enabled tools.'
+              : 'This saves the task for manual start from the Tasks page. No model run will start now.',
+          acceptLabel: runAt ? 'Schedule task' : args.start_after_response ? 'Save and run' : 'Save task',
+          danger: false
+        });
+        if (!approved) return 'Task creation was cancelled.';
+        const task = {
+          id: uid(), title: title.slice(0, 100), prompt: prompt.slice(0, 12000), due: runAt,
+          status: runAt ? 'scheduled' : 'queued', created: Date.now(), runs: 0,
+          chatId: null, projectId
+        };
+        const next = [task, ...tasks];
+        await database.set('tasks', next);
+        tasks = next;
+        renderTasks();
+        renderConversationList();
+        if (args.start_after_response) queuedAgentTaskRuns.push(task.id);
+        return JSON.stringify({ created: true, id: task.id, title: task.title, status: task.status, due: runAt ? new Date(runAt).toISOString() : null, willStartAfterResponse: !!args.start_after_response });
+      }
+    },
+    run_saved_workflow: {
+      definition: {
+        name: 'run_saved_workflow',
+        description: 'Start a saved reusable workflow now after the current response, or schedule it for a future time. Requires user confirmation. The app must remain open for scheduled work.',
+        parameters: { type: 'object', properties: {
+          workflow_id: { type: 'string', minLength: 1, maxLength: 100 },
+          run_at: { type: 'string', maxLength: 80, description: 'Optional future date/time in ISO 8601 format.' }
+        }, required: ['workflow_id'], additionalProperties: false }
+      },
+      run: async args => {
+        const workflow = workflows.find(entry => entry.id === args.workflow_id);
+        if (!workflow) throw new Error('That saved workflow no longer exists.');
+        const runAt = args.run_at ? Date.parse(args.run_at) : null;
+        if (args.run_at && (!Number.isFinite(runAt) || runAt <= Date.now())) throw new Error('Choose a valid future run_at time.');
+        if (tasks.length >= 5000) throw new Error('The local task limit has been reached.');
+        if (!runAt && !settings.model && !modelNames.length) throw new Error('Connect and select a model before running a workflow.');
+        const approved = await confirmAction({
+          title: runAt ? 'Schedule workflow?' : 'Run saved workflow?',
+          message: workflow.name,
+          detail: runAt
+            ? `This workflow will start at ${new Date(runAt).toLocaleString()} if Local AI Runner is open. Its tools may require additional approvals.`
+            : 'It will start after the current response finishes, using enabled tools and their normal approvals.',
+          acceptLabel: runAt ? 'Schedule workflow' : 'Run workflow',
+          danger: false
+        });
+        if (!approved) return 'Workflow run was cancelled.';
+        const task = {
+          id: uid(), title: `Workflow: ${workflow.name}`.slice(0, 100),
+          prompt: compileWorkflowPrompt(workflow),
+          workflowSnapshot: JSON.parse(JSON.stringify(workflow)), due: runAt,
+          status: runAt ? 'scheduled' : 'queued', created: Date.now(), runs: 0,
+          chatId: null, projectId: current()?.projectId || activeProjectId || null
+        };
+        const next = [task, ...tasks];
+        await database.set('tasks', next);
+        tasks = next;
+        renderTasks();
+        renderConversationList();
+        if (!runAt) queuedAgentTaskRuns.push(task.id);
+        return JSON.stringify({ created: true, id: task.id, workflow: workflow.name, status: task.status, due: runAt ? new Date(runAt).toISOString() : null, willStartAfterResponse: !runAt });
+      }
+    },
+    analyze_tabular_data: {
+      definition: {
+        name: 'analyze_tabular_data',
+        description: 'Analyze user-provided CSV or JSON records locally. Returns row count, missing values, numeric min/max/mean/median, and common text values; it does not execute Python or other code.',
+        parameters: { type: 'object', properties: { data: { type: 'string', minLength: 1, maxLength: 500000, description: 'CSV text with a header row or a JSON array of objects' } }, required: ['data'], additionalProperties: false }
+      },
+      run: async args => JSON.stringify(window.LocalDataAnalysis.analyzeTabularData(String(args.data || '')), null, 2)
+    },
     list_workspace_files: {
       definition: { name:'list_workspace_files', description:'List files and folders inside the user-selected workspace. Never attempt paths outside it.', parameters:{type:'object',properties:{path:{type:'string',description:'Optional relative folder path'}},additionalProperties:false} },
       run: async args => JSON.stringify(await window.localAI.workspace.list(String(args.path||'')),null,2)
@@ -1054,6 +1369,8 @@
   };
   // ---------- cowork agent: plan, pause/edit/stop, browser tools ----------
   let pendingToolImages = [];
+  const queuedAgentTaskRuns = [];
+  let drainingAgentTaskRuns = false;
   const AGENT_ONLY_TOOLS = new Set(['update_plan', 'complete_step']);
   const hasBrowserBridge = () => !!window.localAI?.browser;
   function toolDetails(name, source = 'builtin') {
@@ -1061,6 +1378,13 @@
     if (name.startsWith('browser_')) return { category: 'browser', approval: 'Work mode + browser permission; risky actions ask', label: 'Browser' };
     if (['edit_workspace_file', 'create_project_file'].includes(name)) return { category: 'workspace.write', approval: 'Work mode + file permission + native confirmation and backup', label: 'Workspace write' };
     if (name.includes('workspace')) return { category: 'workspace.read', approval: 'Read-only, confined to selected workspace', label: 'Workspace read' };
+    if (name === 'analyze_tabular_data') return { category: 'app.analysis', approval: 'Local, bounded CSV/JSON analysis; no code execution', label: 'Data analysis' };
+    if (name === 'search_local_content') return { category: 'app.search', approval: 'Read-only locally saved app content', label: 'Local search' };
+    if (name === 'get_current_project_context') return { category: 'app.project', approval: 'Read-only project documents', label: 'Project context' };
+    if (['create_local_project', 'list_local_projects'].includes(name)) return { category: 'app.project', approval: name === 'create_local_project' ? 'Creates an empty local project after confirmation' : 'Read-only local project metadata', label: 'Projects' };
+    if (name.includes('memory')) return { category: 'app.memory', approval: name === 'list_local_memories' ? 'Read-only local memory; text is opt-in' : 'Memory changes require confirmation', label: 'Memory' };
+    if (name.includes('workflow')) return { category: 'app.workflow', approval: name.startsWith('list_') ? 'Read-only saved workflows' : 'Workflow actions require confirmation', label: 'Workflows' };
+    if (name.includes('task')) return { category: 'app.tasks', approval: name === 'list_local_tasks' ? 'Read-only task metadata' : 'Task creation/run requires confirmation', label: 'Tasks' };
     if (AGENT_ONLY_TOOLS.has(name)) return { category: 'agent.control', approval: 'Work mode only', label: 'Agent control' };
     return { category: 'app.read', approval: 'Read-only app data', label: 'App read' };
   }
@@ -1095,7 +1419,13 @@
     }
     const groups = new Map();
     entries.forEach(entry => { if (!groups.has(entry.category)) groups.set(entry.category, []); groups.get(entry.category).push(entry); });
-    const names = { 'app.read':'App data · read-only', 'workspace.read':'Workspace · read-only', 'workspace.write':'Workspace · writes', 'browser':'Browser tools', 'agent.control':'Agent planning', 'external.connector':'External MCP tools' };
+    const names = {
+      'app.read':'App data · read-only', 'app.search':'Local search', 'app.analysis':'Data analysis',
+      'app.project':'Projects', 'app.memory':'Local memory', 'app.workflow':'Reusable workflows',
+      'app.tasks':'Tasks and scheduling', 'workspace.read':'Workspace · read-only',
+      'workspace.write':'Workspace · writes', 'browser':'Browser tools',
+      'agent.control':'Agent planning', 'external.connector':'External MCP tools'
+    };
     for (const [category, items] of groups) {
       const heading = document.createElement('div'); heading.className = 'tool-registry-group'; heading.textContent = names[category] || category; target.append(heading);
       items.forEach(entry => {
@@ -1343,6 +1673,16 @@
     TOOLS[`browser_${name}`] = { definition: { name: `browser_${name}`, description, parameters: { type: 'object', properties, required: required || [], additionalProperties: false } }, run };
   }
   const indexProperty = { type: 'integer', minimum: 1, maximum: 120, description: 'Element number from the latest browser_get_dom' };
+  defineBrowserTool('search_web', 'Search the public web with DuckDuckGo in the visible integrated browser. The search query is sent to DuckDuckGo; new-site approval and browser safeguards apply. Returns visible result links and excerpts. Open result links and inspect multiple sources before presenting a cited research summary.', { query: { type: 'string', minLength: 2, maxLength: 500 } }, ['query'],
+    async args => {
+      const query = String(args.query || '').trim();
+      if (query.length < 2) throw new Error('Use at least two characters for a web search.');
+      const url = new URL('https://html.duckduckgo.com/html/');
+      url.searchParams.set('q', query);
+      const opened = await browserCall('navigate', { url: url.href });
+      const results = await browserCall('get_dom', {});
+      return untrusted(results, `DuckDuckGo search for “${query}”. ${pageLine(opened)}\n\n${results.text}`);
+    });
   defineBrowserTool('navigate', 'Open a web page (http or https) in the visible browser. Afterwards call browser_get_dom to see what is on it.', { url: { type: 'string', description: 'Full address, for example https://example.com' } }, ['url'],
     async args => { const r = await browserCall('navigate', { url: args.url }); return untrusted(r, `Opened. ${pageLine(r)}${r.loaded === false ? '\n(The page was still loading when this returned.)' : ''}`); });
   defineBrowserTool('get_dom', 'List the interactive elements currently in view (links, buttons, fields) with numbers, plus headings and visible text. The same numbers are drawn on the page. Call it again after navigating, scrolling or when the page changes.', {}, [],
@@ -1945,6 +2285,12 @@
       announceAssistantStatus(lastResponse?.error?'error':lastResponse?.stopped?'stopped':'complete');
       if(settings.autoRead && current()===chat) speakLatestResponse();
       if (running.size === 0) setStatus(modelNames.length ? true : null, modelNames.length ? `${modelNames.length} model${modelNames.length === 1 ? '' : 's'} available` : 'Not connected');
+      if (running.size === 0 && queuedAgentTaskRuns.length) {
+        setTimeout(() => drainQueuedAgentTasks().catch(error => {
+          console.error('Could not start a queued local task:', error);
+          toast(`Could not start a queued local task: ${error.message || 'unknown error'}`);
+        }), 0);
+      }
     }
     return true;
   }
@@ -2531,6 +2877,26 @@
     const completionMessage=task.status==='completed'?`Task “${task.title}” completed.`:task.status==='cancelled'?`Task “${task.title}” was cancelled.`:`Task “${task.title}” finished with an error. Review its conversation.`;
     toast(completionMessage);
   }
+  async function drainQueuedAgentTasks(){
+    if(drainingAgentTaskRuns||running.size)return;
+    drainingAgentTaskRuns=true;
+    try{
+      while(queuedAgentTaskRuns.length&&running.size===0){
+        const id=queuedAgentTaskRuns.shift();
+        const task=tasks.find(entry=>entry.id===id);
+        if(!task||task.status!=='queued')continue;
+        await runTask(task);
+      }
+    }finally{
+      drainingAgentTaskRuns=false;
+      if(queuedAgentTaskRuns.length&&running.size===0){
+        setTimeout(()=>drainQueuedAgentTasks().catch(error=>{
+          console.error('Could not start a queued local task:',error);
+          toast(`Could not start a queued local task: ${error.message || 'unknown error'}`);
+        }),0);
+      }
+    }
+  }
   async function processScheduledTasks(){
     // Leave due tasks in the scheduled state while another run is active. The
     // next scheduler tick will pick them up; no task can become stranded queued.
@@ -2726,6 +3092,11 @@
     if(!chat.model){toast('Select a model before asking.');return;}
     chat.messages.push({role:'user',content:promptText});chat.updated=Date.now();scheduleSave();renderConversationList();renderMessages();await startRun(chat,false);
   }
+  window.localAI?.editor?.onAIRequest?.(promptText => {
+    if (typeof promptText !== 'string' || !promptText.trim()) return;
+    askInCurrentChat(promptText).catch(error => toast(`Editor assistant request failed: ${error.message}`));
+  });
+
   async function summarizeCurrentChat(){
     const chat=current();if(!chat||!chat.messages.length){toast('There is no conversation to summarize.');return;}
     const transcript=chat.messages.slice(-30).map(message=>`${message.role==='user'?'User':'Assistant'}: ${String(message.content||'').slice(0,1800)}`).join('\n\n').slice(0,18000);
@@ -2844,7 +3215,7 @@
   function applyLocalization(){
     const labels=TRANSLATIONS[settings.uiLanguage]||TRANSLATIONS.en;
     document.querySelectorAll('#chatbar [data-view]').forEach(button=>{
-      const label=button.querySelector('span:nth-child(2)');if(label)label.textContent=labels[button.dataset.view]||TRANSLATIONS.en[button.dataset.view];
+      const label=button.querySelector('span:nth-child(2)');if(label)label.textContent=labels[button.dataset.view]||TRANSLATIONS.en[button.dataset.view]||label.textContent;
     });
     const newChatLabel=$('newChatLabel');if(newChatLabel)newChatLabel.textContent=t('newChat');
     if($('viewTitle'))$('viewTitle').textContent=t(activeView);

@@ -595,7 +595,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .browser-dock{width:min(36%,560px);min-width:300px;max-width:560px;flex:0 1 36%}
 .editor-dock{width:min(36%,560px);min-width:300px;max-width:560px;flex:0 1 36%}
 #chatView.has-both-docks .browser-dock,#chatView.has-both-docks .editor-dock{width:min(32%,480px);min-width:260px;max-width:480px;flex-basis:32%}
-#chatView.has-both-docks .chat-column{min-width:360px}
+#chatView.has-both-docks .chat-column{min-width:0}
 #chatView .browser-dock[hidden],#chatView .editor-dock[hidden]{display:none}
 @media(max-width:920px){
  #chatView .browser-dock{position:fixed;z-index:30;top:60px;right:0;bottom:0;width:min(92vw,560px);max-width:none;min-width:0;flex:none}
@@ -623,6 +623,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 #chatView.has-both-docks .browser-dock,
 #chatView.has-both-docks .editor-dock {
   width: var(--dock-panel-width, min(32%, 480px));
+  max-width: none;
   flex-basis: var(--dock-panel-width, min(32%, 480px));
 }
 .dock-resize-handle {
@@ -697,6 +698,10 @@ body.dock-resizing * {
     width: var(--dock-panel-width, 50vw);
     max-width: none;
   }
+  #chatView.has-both-docks .browser-dock,
+  #chatView.has-both-docks .editor-dock {
+    flex-basis: auto;
+  }
   #chatView .browser-dock > .dock-resize-handle--left {
     left: 0;
     right: auto;
@@ -707,4 +712,47 @@ body.dock-resizing * {
     left: auto;
     transform: translateX(50%);
   }
+}
+
+/* Browser and editor workspace tabs use all available work area below the app bar. */
+#browserView.workspace-view,
+#editorView.workspace-view {
+  padding: 0;
+}
+#browserView .page-heading,
+#editorView .page-heading {
+  display: none;
+}
+#browserView .browser-panel {
+  border: 0;
+  border-radius: 0;
+}
+#browserView .browser-host {
+  background: var(--panel-2);
+}
+#editorPageRoot {
+  width: 100%;
+  min-width: 0;
+}
+#editorPageRoot .editor-shell {
+  border-radius: 0;
+}
+
+.dock-resize-handle {
+  width: 24px;
+  opacity: .48;
+}
+.dock-resize-handle::before {
+  width: 4px;
+  height: 64px;
+}
+.dock-resize-handle:hover,
+.dock-resize-handle:focus-visible,
+.dock-resize-handle.is-dragging {
+  opacity: 1;
+}
+.dock-resizing #chatView .browser-dock,
+.dock-resizing #chatView .editor-dock {
+  transition: none !important;
+  will-change: width, flex-basis;
 }

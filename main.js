@@ -60,6 +60,16 @@ function trustedEditorTargets(exceptId = null) {
   return targets;
 }
 async function configureEditorBridge() {
+  ipcMain.on('editor:ai-request', (event, prompt) => {
+    try {
+      assertTrustedRenderer(event);
+      const text = String(prompt || '').trim();
+      if (!text || text.length > 30000) return;
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('editor:ai-request', text);
+    } catch (error) {
+      console.warn('Rejected editor AI request:', error.message);
+    }
+  });
   ipcMain.handle('editor:sync:get', event => {
     assertTrustedRenderer(event);
     return { ...editorSharedState, preferences: { ...editorPreferences } };
@@ -491,7 +501,7 @@ function configureScreenCapture() {
 function createEditorWindow() {
   const editorWindow = new BrowserWindow({width:1320,height:900,minWidth:760,minHeight:520,backgroundColor:'#0d1118',show:false,title:'Local AI Runner — Code Editor',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   editorWindows.add(editorWindow.webContents.id);
-  editorWindow.once('ready-to-show',()=>editorWindow.show());
+  editorWindow.once('ready-to-show',()=>{editorWindow.maximize();editorWindow.show();});
   editorWindow.on('closed',()=>editorWindows.delete(editorWindow.webContents.id));
   editorWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   editorWindow.loadFile(path.join(__dirname,'editor.html'));
