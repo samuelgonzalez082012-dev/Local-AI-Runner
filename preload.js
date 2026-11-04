@@ -39,8 +39,26 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     getApiKey() { return ipcRenderer.invoke('credentials:get-api-key'); },
     setApiKey(value) { return ipcRenderer.invoke('credentials:set-api-key', value); }
   }),
+  editor: Object.freeze({
+    openWindow() { return ipcRenderer.invoke('editor:open-window'); },
+    getSync() { return ipcRenderer.invoke('editor:sync:get'); },
+    setSync(value) { ipcRenderer.send('editor:sync:set', value); },
+    onSync(callback) { return subscribe('editor:sync:update', callback); },
+    getPreferences() { return ipcRenderer.invoke('editor:preferences:get'); },
+    setPreferences(value) { return ipcRenderer.invoke('editor:preferences:set', value); },
+    onPreferences(callback) { return subscribe('editor:preferences:update', callback); }
+  }),
+  tools: Object.freeze({
+    register(definitions) { return ipcRenderer.invoke('tools:register', definitions); },
+    validate(name, args) { return ipcRenderer.invoke('tools:validate', { name: String(name || ''), args }); },
+    catalog() { return ipcRenderer.invoke('tools:catalog'); },
+    audit(limit) { return ipcRenderer.invoke('tools:audit', limit); },
+    record(entry) { return ipcRenderer.invoke('tools:record', entry); }
+  }),
   workspace: Object.freeze({
-    choose() { return ipcRenderer.invoke('workspace:choose'); },
+    choose(title) { return ipcRenderer.invoke('workspace:choose', title); },
+    setFolder(folderPath) { return ipcRenderer.invoke('workspace:set-folder', String(folderPath || '')); },
+    importFiles() { return ipcRenderer.invoke('workspace:import'); },
     info() { return ipcRenderer.invoke('workspace:info'); },
     list(relativePath) { return ipcRenderer.invoke('workspace:list', relativePath); },
     read(relativePath) { return ipcRenderer.invoke('workspace:read', relativePath); },

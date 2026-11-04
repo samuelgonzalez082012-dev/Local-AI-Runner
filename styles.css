@@ -553,3 +553,158 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .composer-tools{flex-wrap:wrap;row-gap:4px;min-width:0}
 .composer-tools .btn{white-space:nowrap}
 .composer-actions{margin-left:auto;min-width:0}
+
+/* Shared code editor surfaces */
+.editor-dock{width:min(52%,820px);min-width:360px;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border);background:var(--panel)}
+.editor-dock[hidden]{display:none}
+#editorDockRoot{display:flex;flex:1;min-height:0;min-width:0;padding:8px}
+#editorDockRoot .editor-shell{width:100%;height:100%;min-height:0}
+#editorDockRoot .editor-explorer{width:145px;flex-basis:145px}
+#editorDockRoot .editor-toolbar{height:38px;flex-basis:38px}
+#editorDockRoot [data-action="popout"]{display:none}
+#editorView{overflow:hidden;display:none;flex-direction:column;gap:12px}
+#editorView.active{display:flex}
+#editorPageRoot{flex:1;min-height:0;display:flex}
+#editorPageRoot .editor-shell{width:100%;height:100%;min-height:350px}
+.project-editor-root{height:600px;max-height:70vh;margin-top:16px}
+.project-editor-root[hidden]{display:none}
+.project-editor-root .editor-shell{height:100%}
+@media(max-width:920px){.editor-dock{position:fixed;z-index:34;inset:60px 0 0;width:100%;min-width:0;border-left:0}.editor-dock[hidden]{display:none}}
+
+.tool-registry-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--border-soft)}
+.tool-registry-heading h3{font-size:12px;margin:0}.tool-registry-heading small{display:block;color:var(--muted);font-size:9px;line-height:1.5;margin-top:3px}
+.tool-registry-list{display:flex;flex-direction:column;gap:5px}
+.tool-registry-group{margin:10px 0 3px;color:var(--subtle);font-size:9px;letter-spacing:.08em;text-transform:uppercase}
+.tool-registry-row{display:flex;align-items:flex-start;gap:8px;padding:8px;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg);cursor:pointer}
+.tool-registry-row input{margin:3px 0 0;accent-color:var(--accent);flex:0 0 auto}
+.tool-registry-copy{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tool-registry-copy strong{font-size:10px;overflow-wrap:anywhere}
+.tool-registry-copy small{color:var(--muted);font-size:9px;line-height:1.4;overflow-wrap:anywhere}
+.tool-registry-copy .tool-registry-policy{color:var(--subtle);font-size:8px}
+.tool-audit-list{display:flex;flex-direction:column;gap:5px}
+ .tool-audit-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px;border:1px solid var(--border-soft);border-radius:7px;background:var(--bg)}
+.tool-audit-main{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tool-audit-main strong{font-size:10px;overflow-wrap:anywhere}
+.tool-audit-main small,.tool-audit-error{color:var(--muted);font-size:8px;line-height:1.4}
+.tool-audit-status{flex:0 0 auto;padding:3px 6px;border-radius:20px;background:var(--panel-3);color:var(--muted);font-size:8px}
+.tool-audit-status.completed{color:var(--good);background:color-mix(in srgb,var(--good) 12%,transparent)}
+.tool-audit-status.failed,.tool-audit-status.blocked{color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent)}
+.tool-audit-error{flex:1 0 100%;overflow-wrap:anywhere}
+
+/* Browser and editor docks stay independent; both can remain open together. */
+.browser-dock{width:min(36%,560px);min-width:300px;max-width:560px;flex:0 1 36%}
+.editor-dock{width:min(36%,560px);min-width:300px;max-width:560px;flex:0 1 36%}
+#chatView.has-both-docks .browser-dock,#chatView.has-both-docks .editor-dock{width:min(32%,480px);min-width:260px;max-width:480px;flex-basis:32%}
+#chatView.has-both-docks .chat-column{min-width:360px}
+#chatView .browser-dock[hidden],#chatView .editor-dock[hidden]{display:none}
+@media(max-width:920px){
+ #chatView .browser-dock{position:fixed;z-index:30;top:60px;right:0;bottom:0;width:min(92vw,560px);max-width:none;min-width:0;flex:none}
+ #chatView .editor-dock{position:fixed;z-index:31;top:60px;left:0;right:auto;bottom:0;width:min(92vw,560px);max-width:none;min-width:0;flex:none}
+ #chatView.has-both-docks .browser-dock{right:0;left:auto;width:50vw;max-width:50vw;min-width:0}
+ #chatView.has-both-docks .editor-dock{left:0;right:auto;width:50vw;max-width:50vw;min-width:0}
+ #chatView.has-both-docks #editorDockRoot .editor-explorer{width:110px;flex-basis:110px}
+}
+
+.project-heading-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.project-folder-badge{display:inline-flex;vertical-align:middle;margin-left:6px;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:8px;letter-spacing:.08em;font-weight:700}
+.project-card h3{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.project-card p{overflow-wrap:anywhere}
+
+
+/* Resizable browser and editor chat docks */
+#chatView .browser-dock,
+#chatView .editor-dock {
+  position: relative;
+  width: var(--dock-panel-width, min(36%, 560px));
+  min-width: 260px;
+  max-width: none;
+  flex: 0 0 var(--dock-panel-width, min(36%, 560px));
+}
+#chatView.has-both-docks .browser-dock,
+#chatView.has-both-docks .editor-dock {
+  width: var(--dock-panel-width, min(32%, 480px));
+  flex-basis: var(--dock-panel-width, min(32%, 480px));
+}
+.dock-resize-handle {
+  position: absolute;
+  z-index: 45;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: .24;
+  cursor: col-resize;
+  touch-action: none;
+  transition: opacity .12s ease, background .12s ease;
+}
+.dock-resize-handle--left {
+  left: 0;
+  transform: translateX(-50%);
+}
+.dock-resize-handle--right {
+  right: 0;
+  transform: translateX(50%);
+}
+.dock-resize-handle::before {
+  content: "";
+  width: 4px;
+  height: 52px;
+  border-left: 1px solid var(--text);
+  border-right: 1px solid var(--text);
+  border-radius: 2px;
+  opacity: .62;
+}
+.dock-resize-handle:hover,
+.dock-resize-handle:focus-visible,
+.dock-resize-handle.is-dragging {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  outline: none;
+}
+.dock-resize-handle:focus-visible::before,
+.dock-resize-handle.is-dragging::before {
+  border-color: var(--accent);
+  opacity: 1;
+}
+body.dock-resizing,
+body.dock-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+@media(max-width:920px) {
+  #chatView .browser-dock {
+    width: var(--dock-panel-width, min(92vw, 560px));
+    min-width: 220px;
+    max-width: none;
+    flex: none;
+  }
+  #chatView .editor-dock {
+    width: var(--dock-panel-width, min(92vw, 560px));
+    min-width: 220px;
+    max-width: none;
+    flex: none;
+  }
+  #chatView.has-both-docks .browser-dock {
+    width: var(--dock-panel-width, 50vw);
+    max-width: none;
+  }
+  #chatView.has-both-docks .editor-dock {
+    width: var(--dock-panel-width, 50vw);
+    max-width: none;
+  }
+  #chatView .browser-dock > .dock-resize-handle--left {
+    left: 0;
+    right: auto;
+    transform: translateX(-50%);
+  }
+  #chatView .editor-dock > .dock-resize-handle--right {
+    right: 0;
+    left: auto;
+    transform: translateX(50%);
+  }
+}

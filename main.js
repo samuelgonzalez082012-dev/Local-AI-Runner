@@ -8,6 +8,7 @@ const { createWorkspaceService } = require('./services/workspace-service');
 const { createMcpService } = require('./services/mcp-service');
 const { createBrowserService } = require('./services/browser-service');
 const { atomicWriteFile } = require('./services/atomic-file');
+const { createToolRegistry } = require('./services/tool-registry');
 
 // Preserve the user-data directory created by the original repository package.
 // This keeps existing IndexedDB chats, credentials, workspace selection and MCP settings.
@@ -22,17 +23,98 @@ let mainWindow = null;
 let workspace = null;
 let connectors = null;
 let browser = null;
+let toolRegistry = null;
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
+const editorWindows = new Set();
+let editorSharedState = { tabs: [], active: '', origin: '' };
+const EDITOR_PREFERENCE_DEFAULTS = Object.freeze({
+  theme: 'midnight', fontFamily: 'cascadia', fontSize: 13, lineHeight: 1.6,
+  tabSize: 2, lineNumbers: true, background: '#0e131c', panel: '#151b26',
+  text: '#d5dbea', accent: '#91a8ef', keyword: '#c792ea', string: '#a5d6a7',
+  number: '#f2c879', comment: '#78869d'
+});
+let editorPreferences = { ...EDITOR_PREFERENCE_DEFAULTS };
+const editorPreferencesPath = path.join(app.getPath('userData'), 'editor-preferences.json');
+function normalizeEditorPreferences(input = {}) {
+  const next = { ...editorPreferences };
+  const themes = ['midnight','graphite','light','ocean','forest','custom'];
+  const fonts = ['cascadia','consolas','system','fira','jetbrains'];
+  if (themes.includes(input.theme)) next.theme = input.theme;
+  if (fonts.includes(input.fontFamily)) next.fontFamily = input.fontFamily;
+  if ([2,4,8].includes(Number(input.tabSize))) next.tabSize = Number(input.tabSize);
+  if (typeof input.lineNumbers === 'boolean') next.lineNumbers = input.lineNumbers;
+  if (Number.isFinite(Number(input.fontSize))) next.fontSize = Math.max(11, Math.min(22, Number(input.fontSize)));
+  if (Number.isFinite(Number(input.lineHeight))) next.lineHeight = Math.max(1.2, Math.min(2.2, Number(input.lineHeight)));
+  for (const key of ['background','panel','text','accent','keyword','string','number','comment']) {
+    if (typeof input[key] === 'string' && /^#[0-9a-f]{6}$/i.test(input[key])) next[key] = input[key];
+  }
+  return next;
+}
+function trustedEditorTargets(exceptId = null) {
+  const targets = [];
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.id !== exceptId) targets.push(mainWindow.webContents);
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (editorWindows.has(win.webContents.id) && !win.isDestroyed() && win.webContents.id !== exceptId) targets.push(win.webContents);
+  }
+  return targets;
+}
+async function configureEditorBridge() {
+  ipcMain.handle('editor:sync:get', event => {
+    assertTrustedRenderer(event);
+    return { ...editorSharedState, preferences: { ...editorPreferences } };
+  });
+  ipcMain.on('editor:sync:set', (event, payload) => {
+    try {
+      assertTrustedRenderer(event);
+      if (!payload || !Array.isArray(payload.tabs) || payload.tabs.length > 40) throw new Error('Invalid editor synchronization state.');
+      let totalBytes = 0;
+      const tabs = payload.tabs.map(tab => {
+        if (!tab || typeof tab.path !== 'string' || tab.path.length > 500 || tab.path.startsWith('/') || tab.path.split(/[\\/]/).some(part => !part || part === '.' || part === '..')) throw new Error('Invalid editor tab path.');
+        if (typeof tab.content !== 'string' || Buffer.byteLength(tab.content, 'utf8') > 1_500_000) throw new Error('An editor tab exceeds the supported file size.');
+        totalBytes += Buffer.byteLength(tab.content, 'utf8');
+        if (totalBytes > 6_000_000) throw new Error('The combined editor tabs exceed the synchronization limit.');
+        return { path: tab.path, content: tab.content, dirty: !!tab.dirty };
+      });
+      const active = typeof payload.active === 'string' && tabs.some(tab => tab.path === payload.active) ? payload.active : '';
+      const origin = typeof payload.origin === 'string' ? payload.origin.slice(0, 80) : '';
+      editorSharedState = { tabs, active, origin };
+      for (const target of trustedEditorTargets(event.sender.id)) target.send('editor:sync:update', { ...editorSharedState, preferences: { ...editorPreferences } });
+    } catch (error) {
+      console.warn('Rejected editor synchronization update:', error.message);
+    }
+  });
+  ipcMain.handle('editor:preferences:get', event => {
+    assertTrustedRenderer(event);
+    return { ...editorPreferences };
+  });
+  ipcMain.handle('editor:preferences:set', async (event, value) => {
+    assertTrustedRenderer(event);
+    editorPreferences = normalizeEditorPreferences(value || {});
+    await fs.mkdir(path.dirname(editorPreferencesPath), { recursive: true });
+    await atomicWriteFile(editorPreferencesPath, JSON.stringify(editorPreferences, null, 2), { mode: 0o600 });
+    for (const target of trustedEditorTargets()) target.send('editor:preferences:update', { ...editorPreferences });
+    return { ...editorPreferences };
+  });
+  try {
+    const saved = JSON.parse(await fs.readFile(editorPreferencesPath, 'utf8'));
+    editorPreferences = normalizeEditorPreferences(saved);
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.warn('Could not load editor preferences:', error.message);
+  }
+}
 
 function isLocalHost(hostname) {
   return ['localhost','127.0.0.1','::1'].includes(String(hostname).replace(/^\[|\]$/g,''));
 }
 function assertTrustedRenderer(event) {
-  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) throw new Error('Request rejected: untrusted renderer.');
+  const sender = event.sender;
+  const isMain = !!mainWindow && !mainWindow.isDestroyed() && sender === mainWindow.webContents;
+  const isEditor = editorWindows.has(sender.id) && !sender.isDestroyed();
   const frame = event.senderFrame;
   const frameUrl = frame?.url || '';
-  if (!frame || frame !== event.sender.mainFrame || !frameUrl.startsWith('file://') || !frameUrl.endsWith('/index.html')) throw new Error('Request rejected: untrusted frame.');
+  const expectedPage = isMain ? '/index.html' : '/editor.html';
+  if ((!isMain && !isEditor) || !frame || frame !== sender.mainFrame || !frameUrl.startsWith('file://') || !frameUrl.endsWith(expectedPage)) throw new Error('Request rejected: untrusted renderer.');
 }
 function normalizeModelRequest(options) {
   if (!options || typeof options !== 'object') throw new Error('Invalid model request.');
@@ -41,7 +123,7 @@ function normalizeModelRequest(options) {
   if (!['http:','https:'].includes(url.protocol)) throw new Error('Only HTTP and HTTPS model servers are supported.');
   if (url.search || url.hash) throw new Error('Model server endpoints cannot contain query strings or fragments.');
   if (url.protocol === 'http:' && !isLocalHost(url.hostname)) throw new Error('Remote model servers must use HTTPS. HTTP is only allowed for localhost.');
-  const allowedPath = /^\/(api\/(tags|show|chat|ps)|v1\/(models|chat\/completions))\/?$/;
+  const allowedPath = /^\/(api\/(tags|show|chat|ps)|v1\/(models|chat\/completions|messages))\/?$/;
   if (!allowedPath.test(url.pathname)) throw new Error('This endpoint is not part of the supported model-server API.');
   const origin = url.origin;
   if (!isLocalHost(url.hostname) && !approvedModelOrigins.has(origin)) throw new Error('This remote model server has not been approved in this session.');
@@ -51,7 +133,7 @@ function normalizeModelRequest(options) {
   const headers = {};
   for (const [name,value] of Object.entries(options.headers || {})) {
     const key = name.toLowerCase();
-    if (['content-type','authorization','accept'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
+    if (['content-type','authorization','accept','x-api-key','anthropic-version'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
   }
   const body = options.body == null ? undefined : String(options.body);
   if (method === 'GET' && body) throw new Error('GET model requests cannot include a body.');
@@ -261,7 +343,9 @@ function configureDocuments() {
 }
 function configureWorkspace() {
   workspace = createWorkspaceService({ dialog, app });
-  ipcMain.handle('workspace:choose', async event => { assertTrustedRenderer(event); return workspace.choose(mainWindow); });
+  ipcMain.handle('workspace:choose', async (event, title) => { assertTrustedRenderer(event); return workspace.choose(mainWindow, typeof title === 'string' ? title.slice(0, 120) : undefined); });
+  ipcMain.handle('workspace:set-folder', async (event, folderPath) => { assertTrustedRenderer(event); return workspace.setFolder(folderPath); });
+  ipcMain.handle('workspace:import', async event => { assertTrustedRenderer(event); return workspace.importFiles(mainWindow); });
   ipcMain.handle('workspace:info', event => { assertTrustedRenderer(event); return workspace.getInfo(); });
   ipcMain.handle('workspace:list', async (event,relativePath) => { assertTrustedRenderer(event); return workspace.list(relativePath); });
   ipcMain.handle('workspace:read', async (event,relativePath) => { assertTrustedRenderer(event); return workspace.read(relativePath); });
@@ -310,6 +394,31 @@ function configureWorkspace() {
     return workspace.restoreBackup(String(id));
   });
 }
+function configureToolRegistry() {
+  toolRegistry = createToolRegistry({ app });
+  ipcMain.handle('tools:register', (event, definitions) => {
+    assertTrustedRenderer(event);
+    return toolRegistry.register(definitions);
+  });
+  ipcMain.handle('tools:validate', (event, payload) => {
+    assertTrustedRenderer(event);
+    if (!payload || typeof payload.name !== 'string') throw new Error('Invalid tool validation request.');
+    return toolRegistry.validate(payload.name, payload.args);
+  });
+  ipcMain.handle('tools:catalog', event => {
+    assertTrustedRenderer(event);
+    return toolRegistry.list();
+  });
+  ipcMain.handle('tools:audit', (event, limit) => {
+    assertTrustedRenderer(event);
+    return toolRegistry.getAudit(limit);
+  });
+  ipcMain.handle('tools:record', async (event, payload) => {
+    assertTrustedRenderer(event);
+    return toolRegistry.record(payload);
+  });
+}
+
 function configureConnectors() {
   connectors=createMcpService({app,dialog});
   ipcMain.handle('connectors:add',async(event,payload)=>{assertTrustedRenderer(event);return connectors.add(mainWindow,payload||{});});
@@ -379,6 +488,16 @@ function configureScreenCapture() {
   });
 }
 
+function createEditorWindow() {
+  const editorWindow = new BrowserWindow({width:1320,height:900,minWidth:760,minHeight:520,backgroundColor:'#0d1118',show:false,title:'Local AI Runner — Code Editor',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  editorWindows.add(editorWindow.webContents.id);
+  editorWindow.once('ready-to-show',()=>editorWindow.show());
+  editorWindow.on('closed',()=>editorWindows.delete(editorWindow.webContents.id));
+  editorWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
+  editorWindow.loadFile(path.join(__dirname,'editor.html'));
+  return {opened:true};
+}
+
 function createWindow() {
   mainWindow=new BrowserWindow({width:1580,height:980,minWidth:760,minHeight:620,backgroundColor:'#0d1118',show:false,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   const ownerId=mainWindow.webContents.id;
@@ -400,6 +519,10 @@ app.whenReady().then(async()=>{
   configureCredentials();
   configureSystemMetrics();
   configureWorkspace();
+  configureToolRegistry();
+  await toolRegistry.load();
+  await configureEditorBridge();
+  ipcMain.handle('editor:open-window',event=>{assertTrustedRenderer(event);return createEditorWindow();});
   configureConnectors();
   configureBrowser();
   configureScreenCapture();

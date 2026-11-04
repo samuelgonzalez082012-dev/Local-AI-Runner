@@ -10,7 +10,7 @@
     chatsPos: 'left', settingsPos: 'right', chatsOpen: true, settingsOpen: false,
     sidebarWidth: 270, inspectorWidth: 322, maxWidth: 820, fontSize: 15, radius: 10,
     colorBg: '#0f1115', colorPanel: '#161922', colorText: '#e6e8ee', colorAccent: '#6c8cff',
-    toolsEnabled: false, allowFileWrites:false, confirmToolCalls:true, memoryEnabled:false,
+    toolsEnabled: false, allowFileWrites:false, confirmToolCalls:true, disabledTools:[], memoryEnabled:false,
     uiLanguage:'en', responseLanguage:'auto', voiceInputLanguage:'auto', fontFamily:'system', density:'comfortable', motion:'normal',
     themePreset:'midnight', showAvatars:true, showStats:true, autoRead:false, speechRate:1,
     browserEnabled:false, browserAskNewSites:true, browserAutoApprove:false, browserDock:false, maxAgentSteps:25, agentTimeoutMinutes:10, visionModel:''
@@ -59,7 +59,7 @@
   function t(key) { const language = settings.uiLanguage || 'en'; return TRANSLATIONS[language]?.[key] ?? TRANSLATIONS.en[key] ?? key; }
   function tf(key, values = {}) { return Object.entries(values).reduce((result,[name,value])=>result.replaceAll(`{${name}}`,String(value)),t(key)); }
 
-  const URL_DEFAULTS = { ollama: 'http://localhost:11434', openai: 'http://localhost:1234' };
+  const URL_DEFAULTS = { ollama: 'http://localhost:11434', openai: 'http://localhost:1234', anthropic: 'https://api.anthropic.com' };
   const TEXT_EXTENSIONS = new Set(['txt','md','csv','json','xml','html','htm','css','js','mjs','cjs','ts','tsx','jsx','py','java','cs','yaml','yml','log','sql','sh','ps1','toml','ini','cfg','go','rs','c','h','cpp','hpp','rb','php','swift','kt']);
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -287,7 +287,7 @@
     settings.inspectorWidth = clampNumber(settings.inspectorWidth, 280, 420, DEFAULTS.inspectorWidth);
     if (!['standard','bubbles','document'].includes(settings.messageStyle)) settings.messageStyle = 'standard';
     settings.speechVoice = String(settings.speechVoice || '');
-    settings.backend = settings.backend === 'openai' ? 'openai' : 'ollama';
+    settings.backend = ['openai','anthropic'].includes(settings.backend) ? settings.backend : 'ollama';
     settings.baseUrl = String(settings.baseUrl || URL_DEFAULTS[settings.backend]).trim();
     settings.apiKey = String(settings.apiKey || '');
     settings.chatsPos = settings.chatsPos === 'right' ? 'right' : 'left';
@@ -304,6 +304,7 @@
     if (!['midnight','graphite','light','ocean','forest','custom'].includes(settings.themePreset)) settings.themePreset = 'midnight';
     settings.speechRate = clampNumber(settings.speechRate, .7, 1.5, 1);
     for (const key of ['allowFileWrites','memoryEnabled','showAvatars','showStats','autoRead','toolsEnabled','autoCompact','browserEnabled','browserAskNewSites','browserAutoApprove','browserDock']) settings[key] = Boolean(settings[key]);
+    settings.disabledTools = Array.isArray(settings.disabledTools) ? [...new Set(settings.disabledTools.filter(name => typeof name === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(name)))].slice(0, 300) : [];
     settings.confirmToolCalls = true;
     settings.maxAgentSteps = Math.round(clampNumber(settings.maxAgentSteps, 3, 300, 25));
     settings.agentTimeoutMinutes = Math.round(clampNumber(settings.agentTimeoutMinutes, 1, 120, 10));
@@ -682,7 +683,10 @@
   function requestHeaders(method = 'GET') {
     const headers = { Accept: 'application/json' };
     if (method === 'POST') headers['Content-Type'] = 'application/json';
-    if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
+    if (settings.backend === 'anthropic') {
+      headers['anthropic-version'] = '2026-10-21';
+      if (settings.apiKey) headers['x-api-key'] = settings.apiKey;
+    } else if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
     return headers;
   }
 
@@ -932,6 +936,7 @@
   }
 
   function toWire(messages) {
+    if (settings.backend === 'anthropic') return window.LocalAIAnthropicAdapter.toWire(messages, uid);
     if (settings.backend === 'ollama') {
       return messages.map(message => {
         if (message.role === 'user') {
@@ -1051,11 +1056,85 @@
   let pendingToolImages = [];
   const AGENT_ONLY_TOOLS = new Set(['update_plan', 'complete_step']);
   const hasBrowserBridge = () => !!window.localAI?.browser;
+  function toolDetails(name, source = 'builtin') {
+    if (source === 'mcp') return { category: 'external.connector', approval: 'Every call requires native approval', label: 'External MCP' };
+    if (name.startsWith('browser_')) return { category: 'browser', approval: 'Work mode + browser permission; risky actions ask', label: 'Browser' };
+    if (['edit_workspace_file', 'create_project_file'].includes(name)) return { category: 'workspace.write', approval: 'Work mode + file permission + native confirmation and backup', label: 'Workspace write' };
+    if (name.includes('workspace')) return { category: 'workspace.read', approval: 'Read-only, confined to selected workspace', label: 'Workspace read' };
+    if (AGENT_ONLY_TOOLS.has(name)) return { category: 'agent.control', approval: 'Work mode only', label: 'Agent control' };
+    return { category: 'app.read', approval: 'Read-only app data', label: 'App read' };
+  }
   function toolAllowed(name, agentMode) {
+    if (settings.disabledTools.includes(name)) return false;
     if (['edit_workspace_file', 'create_project_file'].includes(name)) return !!(agentMode && settings.allowFileWrites);
     if (name.startsWith('browser_')) return !!(agentMode && settings.browserEnabled && hasBrowserBridge());
     if (AGENT_ONLY_TOOLS.has(name)) return !!agentMode;
     return true;
+  }
+  function availableToolCatalog() {
+    const entries = Object.values(TOOLS).map(tool => {
+      const details = toolDetails(tool.definition.name);
+      return { name: tool.definition.name, description: tool.definition.description, source: 'builtin', category: details.category, approval: details.approval, label: details.label };
+    });
+    (mcpServers || []).forEach(server => (server.tools || []).forEach(tool => {
+      if (!tool.name || server.error) return;
+      const safeName = String(tool.name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+      const name = ('mcp_' + server.id + '_' + safeName).slice(0, 64);
+      const details = toolDetails(name, 'mcp');
+      if (!entries.some(entry => entry.name === name)) entries.push({ name, description: String(tool.description || ''), source: 'mcp', category: details.category, approval: details.approval, label: server.name });
+    }));
+    return entries.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  }
+  function renderToolManagement() {
+    const target = $('toolRegistryList');
+    if (!target) return;
+    target.replaceChildren();
+    const entries = availableToolCatalog();
+    if (!entries.length) {
+      const empty = document.createElement('p'); empty.className = 'muted-text'; empty.textContent = 'No tools are currently registered. Connect an MCP server or enable built-in tools.'; target.append(empty); return;
+    }
+    const groups = new Map();
+    entries.forEach(entry => { if (!groups.has(entry.category)) groups.set(entry.category, []); groups.get(entry.category).push(entry); });
+    const names = { 'app.read':'App data · read-only', 'workspace.read':'Workspace · read-only', 'workspace.write':'Workspace · writes', 'browser':'Browser tools', 'agent.control':'Agent planning', 'external.connector':'External MCP tools' };
+    for (const [category, items] of groups) {
+      const heading = document.createElement('div'); heading.className = 'tool-registry-group'; heading.textContent = names[category] || category; target.append(heading);
+      items.forEach(entry => {
+        const row = document.createElement('label'); row.className = 'tool-registry-row';
+        const check = document.createElement('input'); check.type = 'checkbox'; check.checked = !settings.disabledTools.includes(entry.name);
+        check.setAttribute('aria-label', 'Enable ' + entry.name);
+        check.addEventListener('change', () => {
+          if (check.checked) settings.disabledTools = settings.disabledTools.filter(name => name !== entry.name);
+          else if (!settings.disabledTools.includes(entry.name)) settings.disabledTools.push(entry.name);
+          saveSettings(); renderToolManagement();
+        });
+        const body = document.createElement('span'); body.className = 'tool-registry-copy';
+        const title = document.createElement('strong'); title.textContent = entry.name;
+        const description = document.createElement('small'); description.textContent = (entry.source === 'mcp' ? 'MCP · ' : 'Built-in · ') + (entry.description || 'No description provided.');
+        const approval = document.createElement('small'); approval.className = 'tool-registry-policy'; approval.textContent = entry.approval;
+        body.append(title, description, approval); row.append(check, body); target.append(row);
+      });
+    }
+    const count = $('toolRegistryCount'); if (count) count.textContent = entries.length + ' available · ' + (entries.length - settings.disabledTools.filter(name => entries.some(entry => entry.name === name)).length) + ' enabled';
+  }
+  async function renderToolAudit() {
+    const target = $('toolAuditList');
+    if (!target || !window.localAI?.tools) return;
+    target.replaceChildren();
+    try {
+      const entries = await window.localAI.tools.audit(20);
+      if (!entries.length) { const empty = document.createElement('p'); empty.className = 'muted-text'; empty.textContent = 'No tool calls have been recorded yet.'; target.append(empty); return; }
+      entries.forEach(entry => {
+        const row = document.createElement('div'); row.className = 'tool-audit-row';
+        const main = document.createElement('div'); main.className = 'tool-audit-main';
+        const name = document.createElement('strong'); name.textContent = entry.name;
+        const meta = document.createElement('small'); meta.textContent = new Date(entry.at).toLocaleString() + ' · ' + entry.category + (entry.durationMs === null ? '' : ' · ' + entry.durationMs + ' ms');
+        main.append(name, meta);
+        const status = document.createElement('span'); status.className = 'tool-audit-status ' + entry.status; status.textContent = entry.status;
+        row.append(main, status);
+        if (entry.error) { const error = document.createElement('small'); error.className = 'tool-audit-error'; error.textContent = entry.error; row.append(error); }
+        target.append(row);
+      });
+    } catch (error) { target.textContent = 'Could not load tool activity: ' + error.message; }
   }
   const cleanIpcError = error => String(error?.message || error || 'Something went wrong.').replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
@@ -1359,6 +1438,7 @@
     if ($('browserDock')) $('browserDock').hidden = !docked;
     const dockButton = $('browserDockButton');
     if (dockButton) dockButton.setAttribute('aria-pressed', String(docked));
+    window.dispatchEvent(new Event('editor:dock-layout'));
     const layout = $('browserLayoutToggle');
     if (layout) { layout.textContent = docked ? '⤢' : '◧'; layout.title = docked ? 'Open the browser full size' : 'Dock beside chat'; layout.setAttribute('aria-label', layout.title); }
     syncBrowserBounds();
@@ -1473,39 +1553,79 @@
     renderBrowserState();
   }
 
-  function activeToolDefinitions(model, agentMode) {
-    if (!settings.toolsEnabled) return { definitions:[], remoteMap:new Map() };
-    if(settings.backend==='ollama') {
-      const info=capabilities.get(model);
-      if(!info || !info.known || !info.tools) return { definitions:[], remoteMap:new Map() };
-    }
-    const definitions=Object.values(TOOLS)
-      .filter(tool=>toolAllowed(tool.definition.name,agentMode))
-      .map(tool=>({type:'function',function:tool.definition}));
-    const remoteMap=new Map();
+  const TOOL_PROVIDER_ADAPTERS = {
+    ollama(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; },
+    openai(definition) { return { type: 'function', function: { name: definition.name, description: definition.description, parameters: definition.parameters } }; },
+    anthropic(definition) { return window.LocalAIAnthropicAdapter.toolDefinition(definition); }
+  };
+  async function activeToolDefinitions(model, agentMode) {
+    if (!settings.toolsEnabled) { await window.localAI.tools.register([]); return { definitions:[], remoteMap:new Map(), fallbackPrompt:'', fallbackNames:null }; }
+    const modelInfo = settings.backend === 'ollama' ? capabilities.get(model) : null;
+    const nativeToolsSupported = settings.backend !== 'ollama' || !!(modelInfo?.known && modelInfo.tools);
+    const canonical = [];
+    const remoteMap = new Map();
+    Object.values(TOOLS).filter(tool=>toolAllowed(tool.definition.name,agentMode)).forEach(tool=>{
+      const details=toolDetails(tool.definition.name);
+      canonical.push({definition:tool.definition,source:'builtin',category:details.category,approval:details.approval});
+    });
     (mcpServers||[]).forEach(server=>{
       (server.tools||[]).forEach(tool=>{
         if(!tool.name||server.error)return;
         const safeName=String(tool.name).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,40);
-        const functionName=`mcp_${server.id}_${safeName}`.slice(0,64);
-        if(remoteMap.has(functionName))return;
+        const functionName=('mcp_'+server.id+'_'+safeName).slice(0,64);
+        if(remoteMap.has(functionName)||TOOLS[functionName]||settings.disabledTools.includes(functionName))return;
         remoteMap.set(functionName,{serverId:server.id,toolName:tool.name,serverName:server.name});
-        definitions.push({type:'function',function:{name:functionName,description:`External MCP tool from ${server.name}: ${String(tool.description||'').slice(0,350)}`,
-          parameters:tool.inputSchema&&typeof tool.inputSchema==='object'?tool.inputSchema:{type:'object',properties:{}}}});
+        canonical.push({
+          definition:{name:functionName,description:'External MCP tool from '+server.name+': '+String(tool.description||'').slice(0,350),
+            parameters:tool.inputSchema&&typeof tool.inputSchema==='object'?tool.inputSchema:{type:'object',properties:{}}},
+          source:'mcp',category:'external.connector',approval:'Every call requires native approval'
+        });
       });
     });
-    return { definitions, remoteMap };
+    const registration=await window.localAI.tools.register(canonical);
+    const registered=await window.localAI.tools.catalog();
+    const registeredNames=new Set(registered.map(item=>item.name));
+    if(registration.rejected) console.warn('Some tool definitions were excluded by the registry:',registration.errors);
+    const safeCanonical = canonical.filter(item=>registeredNames.has(item.definition.name));
+    const adapter=TOOL_PROVIDER_ADAPTERS[settings.backend]||TOOL_PROVIDER_ADAPTERS.openai;
+    const definitions=nativeToolsSupported ? safeCanonical.map(item=>adapter(item.definition)) : [];
+    const registeredRemote=new Map([...remoteMap].filter(([name])=>registeredNames.has(name)));
+    if(nativeToolsSupported) return {definitions,remoteMap:registeredRemote,fallbackPrompt:'',fallbackNames:null};
+    const fallback=window.LocalAIRunnerToolFallback?.buildToolFallbackPrompt(safeCanonical)||{prompt:'',names:[]};
+    const fallbackNames=new Set(fallback.names);
+    const fallbackRemote=new Map([...registeredRemote].filter(([name])=>fallbackNames.has(name)));
+    return {definitions,remoteMap:fallbackRemote,fallbackPrompt:fallback.prompt,fallbackNames};
   }
 
-  async function runTool(name,args,remoteMap,chat,signal) {
+  async function runTool(name,args,remoteMap,chat,signal,agentMode,allowedNames=null) {
     const remote=remoteMap?.get(name);
-    if(remote) {
-      const result=await window.localAI.connectors.call({serverId:remote.serverId,toolName:remote.toolName,args:args||{}});
-      return JSON.stringify(result).slice(0,12000);
-    }
     const tool=TOOLS[name];
-    if(!tool) throw new Error(`Tool “${name}” is not available.`);
-    return String(await tool.run(args||{},{chat,signal,attachImage:image=>{pendingToolImages.push(...[].concat(image));}}));
+    const details=toolDetails(name,remote?'mcp':'builtin');
+    const started=Date.now();
+    let auditStatus='failed';
+    let auditError='';
+    try {
+      if(allowedNames && !allowedNames.has(name)) throw new Error('This tool was not included in the current model’s approved tool list.');
+      if(!settings.toolsEnabled) throw new Error('Tools are disabled in the Inspector.');
+      if(!toolAllowed(name,agentMode)) throw new Error('This tool is disabled or not permitted in the current mode.');
+      if(!remote&&!tool) throw new Error('Tool “'+name+'” is not available.');
+      const safeArgs=await window.localAI.tools.validate(name,args||{});
+      let result;
+      if(remote) {
+        result=await window.localAI.connectors.call({serverId:remote.serverId,toolName:remote.toolName,args:safeArgs});
+        result=JSON.stringify(result).slice(0,12000);
+      } else {
+        result=String(await tool.run(safeArgs,{chat,signal,attachImage:image=>{pendingToolImages.push(...[].concat(image));}}));
+      }
+      auditStatus='completed';
+      return result;
+    } catch(error) {
+      auditError=String(error?.message||error).slice(0,240);
+      throw error;
+    } finally {
+      window.localAI.tools.record({name,source:remote?'mcp':'builtin',category:details.category,status:auditStatus,durationMs:Date.now()-started,error:auditError})
+        .then(()=>renderToolAudit()).catch(error=>console.warn('Could not record tool activity:',error));
+    }
   }
 
   function normalizeToolArguments(value) {
@@ -1517,23 +1637,30 @@
     return {};
   }
 
-  async function streamCompletion({ model, messages, tools, signal, onDelta }) {
+  async function streamCompletion({ model, messages, tools, toolFallbackPrompt = '', signal, onDelta }) {
     await ensureServerApproved();
     const result = { content: '', thinking: '', toolCalls: [], chunks: 0, evalCount: 0, evalDuration: 0, rawContent: '', reasoningField: '' };
     const partialCalls = new Map();
+    const wireMessages = toWire(messages);
+    if(toolFallbackPrompt) {
+      if(settings.backend === 'anthropic') wireMessages.system = [wireMessages.system, toolFallbackPrompt].filter(Boolean).join('\n\n');
+      else wireMessages.unshift({role:'system',content:toolFallbackPrompt});
+    }
     const requestBody = settings.backend === 'ollama'
-      ? { model, messages: toWire(messages), stream: true, options: {
+      ? { model, messages: wireMessages, stream: true, options: {
           temperature: settings.temp, top_p: settings.topP, repeat_penalty: settings.repeatPenalty,
           ...(settings.numCtx > 0 ? { num_ctx: settings.numCtx } : {}),
           ...(settings.maxTokens > 0 ? { num_predict: settings.maxTokens } : {})
         }, ...(tools.length ? { tools } : {}) }
-      : { model, messages: toWire(messages), stream: true, temperature: settings.temp, top_p: settings.topP,
-          ...(settings.maxTokens > 0 ? { max_tokens: settings.maxTokens } : {}), ...(tools.length ? { tools } : {}) };
+      : settings.backend === 'anthropic'
+        ? { model, max_tokens: settings.maxTokens > 0 ? settings.maxTokens : 4096, messages: wireMessages.messages, ...(wireMessages.system ? { system: wireMessages.system } : {}), stream: true, ...(tools.length ? { tools } : {}) }
+        : { model, messages: wireMessages, stream: true, temperature: settings.temp, top_p: settings.topP,
+            ...(settings.maxTokens > 0 ? { max_tokens: settings.maxTokens } : {}), ...(tools.length ? { tools } : {}) };
     if (settings.backend === 'ollama') {
       const info = capabilities.get(model);
       if (info?.thinking) requestBody.think = settings.thinkMode !== 'off';
     }
-    const endpoint = settings.backend === 'ollama' ? '/api/chat' : '/v1/chat/completions';
+    const endpoint = settings.backend === 'ollama' ? '/api/chat' : settings.backend === 'anthropic' ? '/v1/messages' : '/v1/chat/completions';
     const request = { url: baseURL() + endpoint, method: 'POST', headers: requestHeaders('POST'), body: JSON.stringify(requestBody) };
 
     function refreshOutput() {
@@ -1567,6 +1694,35 @@
       let data;
       try { data = JSON.parse(payload); } catch (_) { return; }
       if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+      if(settings.backend === 'anthropic') {
+        if(data.type === 'content_block_start') {
+          const block = data.content_block || {};
+          if(block.type === 'tool_use' && typeof block.name === 'string') partialCalls.set(data.index, { id: block.id || uid(), name: block.name, arguments: '', input: block.input || {} });
+        } else if(data.type === 'content_block_delta') {
+          const delta = data.delta || {};
+          if(delta.type === 'text_delta' && delta.text) result.rawContent += delta.text;
+          else if(delta.type === 'thinking_delta' && delta.thinking) result.reasoningField += delta.thinking;
+          else if(delta.type === 'input_json_delta') {
+            const current = partialCalls.get(data.index);
+            if(current) current.arguments += delta.partial_json || '';
+          }
+        } else if(data.type === 'content_block_stop') {
+          const current = partialCalls.get(data.index);
+          if(current) {
+            let args = current.input;
+            if(current.arguments) {
+              try { args = JSON.parse(current.arguments); }
+              catch (_) { throw new Error('Anthropic returned invalid JSON for tool '+current.name+'.'); }
+            }
+            result.toolCalls.push({ id: current.id, name: current.name, args: normalizeToolArguments(args) });
+            partialCalls.delete(data.index);
+          }
+        } else if(data.type === 'message_delta') {
+          if(Number.isFinite(data.usage?.output_tokens)) result.evalCount = data.usage.output_tokens;
+        }
+        if(data.type !== 'ping' && data.type !== 'message_stop') notify();
+        return;
+      }
       const delta = data.choices?.[0]?.delta;
       if (!delta) return;
       if (delta.reasoning_content) result.reasoningField += delta.reasoning_content;
@@ -1639,10 +1795,14 @@
         if (signal?.aborted) reader.cancel().catch(() => {});
       }
     }
-    [...partialCalls.entries()].sort((a,b) => a[0] - b[0]).forEach(([, call]) => {
+    if(settings.backend !== 'anthropic') [...partialCalls.entries()].sort((a,b) => a[0] - b[0]).forEach(([, call]) => {
       result.toolCalls.push({ id: call.id, name: call.name, args: normalizeToolArguments(call.arguments) });
     });
     refreshOutput();
+    if(toolFallbackPrompt && result.content) {
+      const extracted=window.LocalAIRunnerToolFallback?.parseToolFallbackResponse(result.content);
+      if(extracted) { result.content=extracted.content; result.toolCalls.push(...extracted.calls); }
+    }
     return result;
   }
 
@@ -1666,13 +1826,13 @@
         if (current() === chat) toast(`Could not compact older context: ${error.message}`);
       }
     }
-    const toolSet = activeToolDefinitions(model, agentMode);
+    const toolSet = await activeToolDefinitions(model, agentMode);
     const tools = toolSet.definitions;
     const roundLimit = agentMode ? settings.maxAgentSteps : 8;
     if (agentMode && !settings.toolsEnabled) {
       toast('Enable built-in tools in the Inspector before using workspace tools. Agent mode can still answer without tools.');
-    } else if (agentMode && settings.backend === 'ollama' && tools.length === 0) {
-      toast('This Ollama model does not report tool support. Agent mode will run as a normal chat turn.');
+    } else if (agentMode && settings.backend === 'ollama' && tools.length === 0 && toolSet.fallbackPrompt) {
+      toast('This local model will use structured tool requests. Registry validation and normal approvals still apply.');
     }
     for (let round = 0; round < roundLimit; round++) {
       await waitWhilePaused(chat, signal);
@@ -1685,7 +1845,7 @@
       let aborted = false;
       try {
         result = await streamCompletion({
-          model, messages: payload, tools, signal,
+          model, messages: payload, tools, toolFallbackPrompt:toolSet.fallbackPrompt, signal,
           onDelta: partial => { applyResult(message, partial); onUpdate('delta', message); }
         });
         applyResult(message, result);
@@ -1714,7 +1874,7 @@
         await waitWhilePaused(chat, signal);
         if (signal.aborted) { call.status = 'error'; call.result = 'Cancelled by user.'; continue; }
         try {
-          call.result = await runTool(call.name, call.args, toolSet.remoteMap, chat, signal);
+          call.result = await runTool(call.name, call.args, toolSet.remoteMap, chat, signal, agentMode, toolSet.fallbackNames);
           call.status = 'done';
         } catch (error) {
           call.result = `Tool error: ${error.message}`;
@@ -2005,7 +2165,7 @@
 
 
   // ---------- navigation and local workspaces ----------
-  const VIEW_TITLES={chat:'Chats',projects:'Projects',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
+  const VIEW_TITLES={chat:'Chats',projects:'Projects',editor:'Code editor',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
   function navigate(view){
     if(!VIEW_TITLES[view])return;
     activeView=view;
@@ -2065,17 +2225,33 @@
     if(!projects.length){grid.innerHTML=`<div class="section-card"><h2>${escapeHTML(t('noProjects'))}</h2><p>${escapeHTML(t('createProjectHint'))}</p></div>`;return;}
     projects.forEach(project=>{
       const card=document.createElement('article');card.className='project-card';card.tabIndex=0;card.setAttribute('role','button');card.setAttribute('aria-label',`Open project ${project.name}`);
-      card.innerHTML=`<div class="card-icon">▦</div><h3>${escapeHTML(project.name)}</h3><p>${escapeHTML(project.description||t('projectWorkspace'))}</p><div class="card-meta"><span>${(project.documents||[]).length} ${escapeHTML(t('documents'))}</span><span>${conversations.filter(chat=>chat.projectId===project.id).length} ${escapeHTML(t('chatsCount'))}</span><span>${escapeHTML(t('updated'))} ${new Date(project.updated||project.created).toLocaleDateString()}</span></div>`;
+      card.innerHTML=`<div class="card-icon">▦</div><h3>${escapeHTML(project.name)}${project.folderPath?' <span class="project-folder-badge">FOLDER</span>':''}</h3><p>${escapeHTML(project.folderPath?project.folderPath:(project.description||t('projectWorkspace')))}</p><div class="card-meta"><span>${project.folderPath?'Linked folder':(project.documents||[]).length+' '+escapeHTML(t('documents'))}</span><span>${conversations.filter(chat=>chat.projectId===project.id).length} ${escapeHTML(t('chatsCount'))}</span><span>${escapeHTML(t('updated'))} ${new Date(project.updated||project.created).toLocaleDateString()}</span></div>`;
       card.addEventListener('click',()=>openProject(project.id));
       card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openProject(project.id);}});
       grid.appendChild(card);
     });
   }
-  function openProject(projectId){
+  async function openProject(projectId){
     const project=projects.find(entry=>entry.id===projectId);if(!project)return;
+    if(project.folderPath){
+      try{workspaceInfo=await window.localAI.workspace.setFolder(project.folderPath);await refreshWorkspaceInfo();}
+      catch(error){toast('Could not open this project folder: '+error.message);return;}
+    }
     activeProjectId=projectId;$('projectWorkspace').hidden=false;$('projectGrid').hidden=true;
-    $('activeProjectTitle').textContent=project.name;$('activeProjectDescription').textContent=project.description||'';
+    $('activeProjectTitle').textContent=project.name;
+    $('activeProjectDescription').textContent=[project.description||'',project.folderPath?'Folder: '+project.folderPath:''].filter(Boolean).join(' · ');
     renderProjectDocuments();
+  }
+  async function addFolderProject(){
+    try{
+      const folder=await window.localAI.workspace.choose('Choose an existing folder to add as a project');
+      if(!folder)return;
+      const existing=projects.find(project=>project.folderPath===folder.path);
+      if(existing){toast('That folder is already a project.');await openProject(existing.id);return;}
+      const project={id:uid(),name:folder.name.slice(0,80),description:'Folder project',folderPath:folder.path,documents:[],created:Date.now(),updated:Date.now()};
+      projects.unshift(project);await saveCollection('projects',projects);renderProjects();await openProject(project.id);
+      toast('Added '+folder.name+' as a folder project.');
+    }catch(error){toast('Could not add folder project: '+error.message);}
   }
   function renderProjectDocuments(){
     const project=projects.find(entry=>entry.id===activeProjectId);const list=$('projectDocuments');list.replaceChildren();
@@ -2496,6 +2672,7 @@
     const list=$('connectorList');if(!list)return;list.replaceChildren();
     if(!window.localAI?.connectors){list.textContent=t('connectorUnavailable');return;}
     try{mcpServers=await window.localAI.connectors.list();}catch(error){mcpServers=[];toast(`${t('connectorLoadFailed')}: ${error.message}`);}
+    renderToolManagement();
     if(!mcpServers.length){list.innerHTML=`<span class="muted-text">${escapeHTML(t('noConnectors'))}</span>`;return;}
     mcpServers.forEach(server=>{
       const row=document.createElement('div');row.className='connector-row';row.innerHTML=`<div><strong>${escapeHTML(server.name)}</strong><small>${escapeHTML(server.url)} · ${server.tools?.length||0} ${escapeHTML(t('toolsCount'))} ${server.error?'· '+escapeHTML(server.error):''}</small></div><button class="btn small danger">${escapeHTML(t('disconnect'))}</button>`;
@@ -2762,7 +2939,7 @@
     };
 
     on('backend', 'change', event => {
-      settings.backend = event.target.value === 'openai' ? 'openai' : 'ollama';
+      settings.backend = ['openai','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
       settings.baseUrl = URL_DEFAULTS[settings.backend];
       $('baseUrl').value = settings.baseUrl;
       approvedModelServer = '';
@@ -2847,7 +3024,8 @@
       keys.forEach(key => { settings[key] = DEFAULTS[key]; });
       syncSettingsUI(); saveSettings(); applyAppearance(); toast('Appearance and layout reset.');
     });
-    on('toolsEnabled','change',event=>setSetting('toolsEnabled',event.target.checked));
+    on('toolsEnabled','change',event=>{setSetting('toolsEnabled',event.target.checked);renderToolManagement();});
+    on('refreshToolAudit','click',renderToolAudit);
     on('browserEnabled','change',event=>{
       setSetting('browserEnabled',event.target.checked);
       if(event.target.checked&&!settings.toolsEnabled){settings.toolsEnabled=true;saveSettings();if($('toolsEnabled'))$('toolsEnabled').checked=true;toast('Built-in tools were turned on because the browser tools need them.');}
@@ -2899,7 +3077,7 @@
     });
     on('tabs','click',event=>{
       const button=event.target.closest('button[data-tab]');
-      if(button)showSettingsTab(button.dataset.tab);
+      if(button){showSettingsTab(button.dataset.tab);if(button.dataset.tab==='tools'){renderToolManagement();renderToolAudit();}}
     });
     on('saveThemeProfile','click',saveThemeProfile);
     on('exportTheme','click',exportTheme);
@@ -2979,6 +3157,7 @@
     on('conversationSearch','input',renderConversationList);
 
     on('newProject','click',createProject);
+    on('addFolderProject','click',addFolderProject);
     on('backProjects','click',()=>{activeProjectId=null;$('projectWorkspace').hidden=true;$('projectGrid').hidden=false;renderProjects();});
     on('addProjectDocuments','click',()=> $('projectFileInput').click());
     on('projectFileInput','change',async event=>{await addProjectDocuments(event.target.files);event.target.value='';});
@@ -3114,6 +3293,7 @@
     loadSpeechVoices();
     if(benchmarkHistory.length){const latest=benchmarkHistory[0];$('benchmarkResults').innerHTML=(latest.results||[]).map(result=>`<div class="benchmark-row"><strong>${escapeHTML(result.model)}</strong><span>${result.tps?`${result.tps.toFixed(1)} tok/s`:`${result.elapsed.toFixed(1)}s`}</span><span>${escapeHTML(result.error||result.preview||'')}</span></div>`).join('');}
     await Promise.all([loadModels(),refreshWorkspaceInfo(),renderConnectors()]);
+    renderToolManagement();renderToolAudit();
     refreshRuntime();
     setInterval(()=>{processScheduledTasks().catch(error=>console.warn('Scheduled task check failed:',error));},15000);
   }
