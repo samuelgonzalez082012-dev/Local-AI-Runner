@@ -31,7 +31,7 @@ test('OpenRouter requests use Chat Completions streaming and an app title header
 });
 
 test('main-process request validation permits only the required OpenRouter API routes', () => {
-  assert.match(main, /api\\\/v1\\\/\(models\|chat\\\/completions\)/);
+  assert.ok(main.includes('api\\/v1\\/(models|chat\\/completions)'));
 });
 
 test('OpenRouter setup is documented without embedding credentials', () => {
