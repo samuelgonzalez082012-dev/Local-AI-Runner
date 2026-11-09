@@ -41,6 +41,7 @@ The app does not download models. Install and manage models using your inference
 
 - **Ollama:** connect to `http://localhost:11434`. Tool calling uses native model support when available, with a structured request fallback for models that do not advertise native tool calling.
 - **OpenAI-compatible API:** connect to your compatible server URL and provide its API key if required.
+- **OpenRouter:** connect to `https://openrouter.ai/api/v1`, enter an OpenRouter API key, and browse the hosted model catalog. Model cards show published input/output pricing and context length when supplied by OpenRouter. Requests use the OpenAI-compatible Chat Completions API and stream responses; provider usage and charges are managed by OpenRouter.
 - **Anthropic API:** choose **Anthropic API**, use the default `https://api.anthropic.com` URL, and enter an Anthropic API key. The app uses the Anthropic Messages API, including its streaming and native tool-use formats. Remote server approval is required before prompts are sent. API access and any provider charges are managed by Anthropic.
 
 ### Universal tool registry

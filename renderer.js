@@ -59,7 +59,7 @@
   function t(key) { const language = settings.uiLanguage || 'en'; return TRANSLATIONS[language]?.[key] ?? TRANSLATIONS.en[key] ?? key; }
   function tf(key, values = {}) { return Object.entries(values).reduce((result,[name,value])=>result.replaceAll(`{${name}}`,String(value)),t(key)); }
 
-  const URL_DEFAULTS = { ollama: 'http://localhost:11434', openai: 'http://localhost:1234', anthropic: 'https://api.anthropic.com' };
+  const URL_DEFAULTS = { ollama: 'http://localhost:11434', openai: 'http://localhost:1234', openrouter: 'https://openrouter.ai/api/v1', anthropic: 'https://api.anthropic.com' };
   const TEXT_EXTENSIONS = new Set(['txt','md','csv','json','xml','html','htm','css','js','mjs','cjs','ts','tsx','jsx','py','java','cs','yaml','yml','log','sql','sh','ps1','toml','ini','cfg','go','rs','c','h','cpp','hpp','rb','php','swift','kt']);
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -287,7 +287,7 @@
     settings.inspectorWidth = clampNumber(settings.inspectorWidth, 280, 420, DEFAULTS.inspectorWidth);
     if (!['standard','bubbles','document'].includes(settings.messageStyle)) settings.messageStyle = 'standard';
     settings.speechVoice = String(settings.speechVoice || '');
-    settings.backend = ['openai','anthropic'].includes(settings.backend) ? settings.backend : 'ollama';
+    settings.backend = ['openai','openrouter','anthropic'].includes(settings.backend) ? settings.backend : 'ollama';
     settings.baseUrl = String(settings.baseUrl || URL_DEFAULTS[settings.backend]).trim();
     settings.apiKey = String(settings.apiKey || '');
     settings.chatsPos = settings.chatsPos === 'right' ? 'right' : 'left';
@@ -366,6 +366,15 @@
     if (backdrop) backdrop.hidden = mobilePanel === 'none';
   }
 
+  function syncProviderFields() {
+    const key = $('apiKey');
+    const optional = key?.closest('label')?.querySelector('.optional');
+    if (optional) optional.textContent = settings.backend === 'openrouter' ? 'Required' : 'Optional';
+    if (key) key.placeholder = settings.backend === 'openrouter' ? 'Paste your OpenRouter API key' : 'Only if your server requires one';
+    const url = $('baseUrl');
+    if (url) url.placeholder = URL_DEFAULTS[settings.backend] || URL_DEFAULTS.ollama;
+  }
+
   function syncSettingsUI() {
     const fields = {
       backend: settings.backend, baseUrl: settings.baseUrl, apiKey: settings.apiKey,
@@ -387,6 +396,7 @@
     };
     Object.entries(fields).forEach(([id, value]) => { if ($(id)) $(id).type === 'checkbox' ? ($(id).checked = !!value) : ($(id).value = value); });
     updateRangeLabels();
+    syncProviderFields();
     syncChatSystemField();
   }
 
@@ -687,6 +697,7 @@
       headers['anthropic-version'] = '2026-10-21';
       if (settings.apiKey) headers['x-api-key'] = settings.apiKey;
     } else if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
+    if (settings.backend === 'openrouter') headers['X-Title'] = 'Local AI Runner';
     return headers;
   }
 
@@ -717,10 +728,11 @@
 
   async function loadModels() {
     if (!baseURL()) { setStatus(false, 'Enter a server URL'); return; }
+    if (settings.backend === 'openrouter' && !settings.apiKey.trim()) { setStatus(false, 'Enter an OpenRouter API key'); $('connectionDetail').textContent = 'An OpenRouter API key is required to load hosted models.'; return; }
     setStatus(null, 'Connecting…');
     $('connectButton').disabled = true;
     try {
-      const endpoint = settings.backend === 'ollama' ? '/api/tags' : '/v1/models';
+      const endpoint = settings.backend === 'ollama' ? '/api/tags' : settings.backend === 'openrouter' ? '/models' : '/v1/models';
       const data = await apiRequest(baseURL() + endpoint);
       modelMetadata = settings.backend === 'ollama' ? (data.models || []) : (data.data || []);
       modelNames = settings.backend === 'ollama'
@@ -2000,7 +2012,7 @@
       const info = capabilities.get(model);
       if (info?.thinking) requestBody.think = settings.thinkMode !== 'off';
     }
-    const endpoint = settings.backend === 'ollama' ? '/api/chat' : settings.backend === 'anthropic' ? '/v1/messages' : '/v1/chat/completions';
+    const endpoint = settings.backend === 'ollama' ? '/api/chat' : settings.backend === 'anthropic' ? '/v1/messages' : settings.backend === 'openrouter' ? '/chat/completions' : '/v1/chat/completions';
     const request = { url: baseURL() + endpoint, method: 'POST', headers: requestHeaders('POST'), body: JSON.stringify(requestBody) };
 
     function refreshOutput() {
@@ -2667,6 +2679,14 @@
   let modelMetadata=[];
   let benchmarkHistory=[];
   const benchmarkSelected=new Set();
+  function formatOpenRouterPrice(perToken) {
+    const value = Number(perToken);
+    if (!Number.isFinite(value) || value < 0) return '';
+    if (value === 0) return 'Free';
+    const perMillion = value * 1_000_000;
+    return perMillion < 0.01 ? '<$0.01' : '$' + perMillion.toFixed(perMillion < 1 ? 3 : 2);
+  }
+
   function renderModelCatalog(){
     const container=$('modelCatalog');container.replaceChildren();
     if(!modelNames.length){container.innerHTML=`<div class="section-card"><h2>${escapeHTML(t('noModels'))}</h2><p>${escapeHTML(t('connectRefresh'))}</p></div>`;return;}
@@ -2674,7 +2694,13 @@
       const meta=modelMetadata.find(entry=>(entry.name||entry.id)===model)||{};
       const info=capabilities.get(model);
       const card=document.createElement('article');card.className='model-card';
-      card.innerHTML=`<div class="card-icon">◈</div><h3>${escapeHTML(model)}</h3><p>${escapeHTML(meta.details?.family||meta.owned_by||t('localModel'))}</p><div class="card-meta"><span>${meta.size?`${(meta.size/1e9).toFixed(1)} GB`:t('sizeUnavailable')}</span><span>${info?.vision?escapeHTML(t('vision')):''}</span><span>${info?.thinking?escapeHTML(t('thinking')):''}</span><span>${info?.tools?escapeHTML(t('tools')):''}</span></div><label class="check-field"><input type="checkbox" data-model-bench="${escapeHTML(model)}" ${benchmarkSelected.has(model)?'checked':''}><span><strong>${escapeHTML(t('includeComparison'))}</strong></span></label><button class="btn full" data-use-model="${escapeHTML(model)}">${escapeHTML(t('useModel'))}</button>`;
+      const pricing=meta.pricing||{};
+      const inputPrice=formatOpenRouterPrice(pricing.prompt);
+      const outputPrice=formatOpenRouterPrice(pricing.completion);
+      const priceDetails=settings.backend==='openrouter'?[inputPrice?`<span>Input ${escapeHTML(inputPrice)}/1M</span>`:'',outputPrice?`<span>Output ${escapeHTML(outputPrice)}/1M</span>`:''].filter(Boolean).join('') : '';
+      const contextDetails=settings.backend==='openrouter'&&Number(meta.context_length)>0?`<span>${Number(meta.context_length).toLocaleString()} context</span>`:'';
+      const modelDescription=settings.backend==='openrouter'?(meta.name||meta.description||meta.owned_by||'OpenRouter model'):(meta.details?.family||meta.owned_by||t('localModel'));
+      card.innerHTML=`<div class="card-icon">◈</div><h3>${escapeHTML(model)}</h3><p>${escapeHTML(modelDescription)}</p><div class="card-meta"><span>${meta.size?`${(meta.size/1e9).toFixed(1)} GB`:settings.backend==='openrouter'?'Cloud model':t('sizeUnavailable')}</span>${contextDetails}${priceDetails}<span>${info?.vision?escapeHTML(t('vision')):''}</span><span>${info?.thinking?escapeHTML(t('thinking')):''}</span><span>${info?.tools?escapeHTML(t('tools')):''}</span></div><label class="check-field"><input type="checkbox" data-model-bench="${escapeHTML(model)}" ${benchmarkSelected.has(model)?'checked':''}><span><strong>${escapeHTML(t('includeComparison'))}</strong></span></label><button class="btn full" data-use-model="${escapeHTML(model)}">${escapeHTML(t('useModel'))}</button>`;
       card.querySelector('[data-use-model]').addEventListener('click',event=>{event.stopPropagation();const chat=current();settings.model=model;if(chat)chat.model=model;saveSettings();scheduleSave();syncModelSelect();updateCapabilityBadges();ensureCapabilities(model);setInspectorModel();navigate('chat');toast(`Selected ${model}.`);});
       card.querySelector('[data-model-bench]').addEventListener('change',event=>{if(event.target.checked){if(benchmarkSelected.size>=3){event.target.checked=false;toast('Choose no more than three models.');return;}benchmarkSelected.add(model);}else benchmarkSelected.delete(model);});
       container.appendChild(card);
@@ -3310,9 +3336,10 @@
     };
 
     on('backend', 'change', event => {
-      settings.backend = ['openai','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
+      settings.backend = ['openai','openrouter','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
       settings.baseUrl = URL_DEFAULTS[settings.backend];
       $('baseUrl').value = settings.baseUrl;
+      syncProviderFields();
       approvedModelServer = '';
       capabilities.clear();
       saveSettings();
