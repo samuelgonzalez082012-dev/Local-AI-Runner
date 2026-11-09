@@ -27,7 +27,7 @@ test('OpenRouter model discovery uses the hosted catalog and exposes model prici
 test('OpenRouter requests use Chat Completions streaming and an app title header', () => {
   assert.match(renderer, /settings\.backend === 'openrouter' \? '\/chat\/completions'/);
   assert.match(renderer, /headers\['X-Title'\] = 'Local AI Runner'/);
-  assert.match(main, /'x-title'\.includes\(key\)/);
+  assert.ok(main.includes("['content-type','authorization','accept','x-api-key','anthropic-version','x-title'].includes(key)"));
 });
 
 test('main-process request validation permits only the required OpenRouter API routes', () => {
