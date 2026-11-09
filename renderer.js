@@ -366,6 +366,15 @@
     if (backdrop) backdrop.hidden = mobilePanel === 'none';
   }
 
+  function syncProviderFields() {
+    const key = $('apiKey');
+    const optional = key?.closest('label')?.querySelector('.optional');
+    if (optional) optional.textContent = settings.backend === 'openrouter' ? 'Required' : 'Optional';
+    if (key) key.placeholder = settings.backend === 'openrouter' ? 'Paste your OpenRouter API key' : 'Only if your server requires one';
+    const url = $('baseUrl');
+    if (url) url.placeholder = URL_DEFAULTS[settings.backend] || URL_DEFAULTS.ollama;
+  }
+
   function syncSettingsUI() {
     const fields = {
       backend: settings.backend, baseUrl: settings.baseUrl, apiKey: settings.apiKey,
@@ -387,6 +396,7 @@
     };
     Object.entries(fields).forEach(([id, value]) => { if ($(id)) $(id).type === 'checkbox' ? ($(id).checked = !!value) : ($(id).value = value); });
     updateRangeLabels();
+    syncProviderFields();
     syncChatSystemField();
   }
 
@@ -718,6 +728,7 @@
 
   async function loadModels() {
     if (!baseURL()) { setStatus(false, 'Enter a server URL'); return; }
+    if (settings.backend === 'openrouter' && !settings.apiKey.trim()) { setStatus(false, 'Enter an OpenRouter API key'); $('connectionDetail').textContent = 'An OpenRouter API key is required to load hosted models.'; return; }
     setStatus(null, 'Connecting…');
     $('connectButton').disabled = true;
     try {
@@ -3328,6 +3339,7 @@
       settings.backend = ['openai','openrouter','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
       settings.baseUrl = URL_DEFAULTS[settings.backend];
       $('baseUrl').value = settings.baseUrl;
+      syncProviderFields();
       approvedModelServer = '';
       capabilities.clear();
       saveSettings();
