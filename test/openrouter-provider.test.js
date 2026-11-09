@@ -22,6 +22,7 @@ test('OpenRouter model discovery uses the hosted catalog and exposes model prici
   assert.match(renderer, /meta\.pricing/);
   assert.match(renderer, /meta\.context_length/);
   assert.match(renderer, /formatOpenRouterPrice/);
+  assert.match(renderer, /An OpenRouter API key is required/);
 });
 
 test('OpenRouter requests use Chat Completions streaming and an app title header', () => {
