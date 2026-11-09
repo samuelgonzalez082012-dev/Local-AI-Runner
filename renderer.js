@@ -2673,7 +2673,10 @@
     if (!Number.isFinite(value) || value < 0) return '';
     if (value === 0) return 'Free';
     const perMillion = value * 1_000_000;
-    return perMillion < 0.01 ? '<$0.01' : '
+    return perMillion < 0.01 ? '<$0.01' : '$' + perMillion.toFixed(perMillion < 1 ? 3 : 2);
+  }
+
+  function renderModelCatalog(){
     const container=$('modelCatalog');container.replaceChildren();
     if(!modelNames.length){container.innerHTML=`<div class="section-card"><h2>${escapeHTML(t('noModels'))}</h2><p>${escapeHTML(t('connectRefresh'))}</p></div>`;return;}
     modelNames.forEach(model=>{
@@ -2681,7 +2684,9 @@
       const info=capabilities.get(model);
       const card=document.createElement('article');card.className='model-card';
       const pricing=meta.pricing||{};
-      const priceDetails=settings.backend==='openrouter'?`<span>Input ${formatOpenRouterPrice(pricing.prompt)}/1M</span><span>Output ${formatOpenRouterPrice(pricing.completion)}/1M</span>`:'';
+      const inputPrice=formatOpenRouterPrice(pricing.prompt);
+      const outputPrice=formatOpenRouterPrice(pricing.completion);
+      const priceDetails=settings.backend==='openrouter'?[inputPrice?`<span>Input ${escapeHTML(inputPrice)}/1M</span>`:'',outputPrice?`<span>Output ${escapeHTML(outputPrice)}/1M</span>`:''].filter(Boolean).join('') : '';
       const contextDetails=settings.backend==='openrouter'&&Number(meta.context_length)>0?`<span>${Number(meta.context_length).toLocaleString()} context</span>`:'';
       const modelDescription=settings.backend==='openrouter'?(meta.name||meta.description||meta.owned_by||'OpenRouter model'):(meta.details?.family||meta.owned_by||t('localModel'));
       card.innerHTML=`<div class="card-icon">◈</div><h3>${escapeHTML(model)}</h3><p>${escapeHTML(modelDescription)}</p><div class="card-meta"><span>${meta.size?`${(meta.size/1e9).toFixed(1)} GB`:settings.backend==='openrouter'?'Cloud model':t('sizeUnavailable')}</span>${contextDetails}${priceDetails}<span>${info?.vision?escapeHTML(t('vision')):''}</span><span>${info?.thinking?escapeHTML(t('thinking')):''}</span><span>${info?.tools?escapeHTML(t('tools')):''}</span></div><label class="check-field"><input type="checkbox" data-model-bench="${escapeHTML(model)}" ${benchmarkSelected.has(model)?'checked':''}><span><strong>${escapeHTML(t('includeComparison'))}</strong></span></label><button class="btn full" data-use-model="${escapeHTML(model)}">${escapeHTML(t('useModel'))}</button>`;
