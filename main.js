@@ -9,6 +9,8 @@ const { createMcpService } = require('./services/mcp-service');
 const { createBrowserService } = require('./services/browser-service');
 const { atomicWriteFile } = require('./services/atomic-file');
 const { createToolRegistry } = require('./services/tool-registry');
+const { createOpenRouterService } = require('./services/openrouter-service');
+const { createAgentEventStore } = require('./services/agent-event-store');
 
 // Preserve the user-data directory created by the original repository package.
 // This keeps existing IndexedDB chats, credentials, workspace selection and MCP settings.
@@ -24,6 +26,8 @@ let workspace = null;
 let connectors = null;
 let browser = null;
 let toolRegistry = null;
+const openRouter = createOpenRouterService({ safeStorage, fs, path, userData: app.getPath('userData') });
+const agentEvents = createAgentEventStore({ fs, path, userData: app.getPath('userData') });
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
 const editorWindows = new Set();
@@ -471,6 +475,22 @@ function configureBrowser() {
   });
 }
 
+
+function configureWorkspaceRedesign() {
+  const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => { assertTrustedRenderer(event); return handler(...args); });
+  handle('openrouter:set-key', value => openRouter.setKey(value));
+  handle('openrouter:status', () => openRouter.status());
+  handle('openrouter:models', () => openRouter.models());
+  handle('openrouter:chat', payload => openRouter.chat(payload));
+  handle('agent-events:append', async payload => {
+    if (!payload || typeof payload !== 'object') throw new Error('Invalid activity event.');
+    const event = await agentEvents.append(payload);
+    mainWindow?.webContents.send('agent-events:update', event);
+    return event;
+  });
+  handle('agent-events:list', options => agentEvents.list(options || {}));
+}
+
 function configureScreenCapture() {
   session.defaultSession.setPermissionRequestHandler((webContents,permission,callback)=>{
     callback(permission==='display-capture' && mainWindow && !mainWindow.isDestroyed() && webContents===mainWindow.webContents);
@@ -520,7 +540,8 @@ app.whenReady().then(async()=>{
   configureSystemMetrics();
   configureWorkspace();
   configureToolRegistry();
-  await toolRegistry.load();
+  configureWorkspaceRedesign();
+  await Promise.all([toolRegistry.load(), agentEvents.load()]);
   await configureEditorBridge();
   ipcMain.handle('editor:open-window',event=>{assertTrustedRenderer(event);return createEditorWindow();});
   configureConnectors();
