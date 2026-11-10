@@ -1,24 +1,46 @@
-# AI Workspace redesign
+# AI workspace redesign
 
-This branch introduces the first integration layer for the redesign.
+This branch implements the integrated AI workspace and Planner-controlled team execution. It is intended to be tested in Electron before merging.
 
-## Included
-- OpenRouter service with encrypted API-key storage via Electron safeStorage, model discovery and chat completion requests.
-- Main-process IPC and context-isolated preload methods for OpenRouter and agent activity.
-- Persisted, bounded activity event store.
-- Workspace tab shell with draggable tabs and a basic split-layout state.
-- Agent Control Center concept with Planner-only coordination and a team-instruction event.
-- OpenRouter provider drawer and Planner response path for team instructions.
+## Workspace
 
-## Design decisions
-- Unified workspace tabs with tool-specific views and split groups.
-- Planner is the only agent allowed to create/reassign tasks; other agents report or ask questions.
-- Inspector presents live activity and concise decision summaries, not private internal chain-of-thought.
+- A unified tab strip exposes Chat, AI Team, Code Editor, Browser, Projects, Models, Tasks, Files, Activity, Connections, Memory, Insights, Settings and Help.
+- Existing Chat, Editor and Browser views are mounted inside the workspace rather than replaced with mock screens.
+- Dragging a tab into a panel creates a second tab group. Each group has its own tab strip; the split can be horizontal or vertical and the divider is resizable.
+- Layout state is saved per selected workspace folder.
+- Files has a navigable project-folder explorer and read-only file preview.
 
-## Current limitations requiring follow-up before claiming feature-complete
-- The split surface is an initial two-group implementation, not yet a fully recursive nested split tree with draggable dividers and independent tab strips in each group.
-- Existing editor/browser views need full mounting adapters into each workspace tab group; placeholder surfaces remain for tools without a current mount.
-- The Planner response path uses OpenRouter chat, but does not yet dispatch executable delegated work to independent developer/reviewer model sessions.
-- Activity events are persisted and can be subscribed to, but the current inspector still needs a complete live event projection and timeline visualization.
-- Agent-specific provider/model assignment UI and provider routing across every existing execution path remain to be integrated.
-- Run the full Electron app and automated tests in a Node/Electron environment before release.
+## Agent Control Center
+
+- The graph, Agent Inspector and team conversation live in one Work surface.
+- The default roles are Planner, Developer 1, Developer 2 and Reviewer. Agent names and role instructions are editable.
+- Each role has an independent provider and model assignment. OpenRouter model discovery uses the encrypted OpenRouter key; Ollama model discovery and inference are restricted to loopback.
+- OpenRouter credentials are encrypted with Electron safeStorage. The key is not placed in renderer storage.
+- Planner alone creates and routes tasks. A user can address the team or request a specific agent; requests are routed through Planner.
+- Developers receive workspace context and prior agent reports. Reports are shared with subsequent agents and Reviewer, so agents can coordinate through the Planner-controlled run.
+- Reviewer inspects proposed changes and records a concise decision summary. The UI shows activity and summaries, not private chain-of-thought.
+- Runs support pause between agent steps, stop/interrupt, and stop-and-redirect.
+- Team templates can be saved and loaded.
+
+## Files and safety
+
+- Agents do not write directly to the project. They return proposed file contents.
+- The user must approve each create/write action through the existing preview/confirmation flow.
+- Writes are serialized with per-file locks. Existing files are backed up before replacement.
+- Approved modifications add a bounded line-diff summary to the activity timeline.
+- Agent activity is stored locally, bounded to the latest 5,000 events, scoped by project, and recent project activity is supplied to Planner as project context.
+
+## Validation
+
+Automated checks run on each push to this branch:
+- JavaScript syntax checks for the Electron main/preload, workspace and agent services.
+- npm test, including agent orchestration, provider isolation, team-template persistence, event persistence and project filtering.
+
+The full Electron application has not been interactively smoke-tested in this environment. The remaining release gate is to run the app on the target desktop, connect OpenRouter and/or Ollama, exercise split-pane mounting for Chat/Editor/Browser, run a delegated task, approve a proposed file change, and verify pause/stop/redirect and layout persistence.
+
+## Deliberate boundaries
+
+- The current split manager supports independent tab groups in a resizable two-pane layout; it is not yet a recursive arbitrary-depth split tree.
+- The shipped team has four built-in agent slots with editable names and role instructions. It does not yet support adding unlimited new agent identities.
+- Agent-to-agent collaboration is mediated by Planner assignments and shared reports, not unrestricted peer-to-peer messaging.
+- Ollama is intentionally loopback-only. Remote model servers are not accepted by the new Ollama path.
