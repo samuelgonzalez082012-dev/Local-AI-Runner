@@ -523,6 +523,8 @@ async function configureWorkspaceRedesign() {
   handle('agent-team:templates:save', name => orchestrator.saveTemplate(name));
   handle('agent-team:templates:load', name => orchestrator.loadTemplate(name));
   handle('agent-team:run', value => orchestrator.run(value));
+  handle('agent-team:pause', () => ({ paused: orchestrator.pause() }));
+  handle('agent-team:resume', () => ({ resumed: orchestrator.resume() }));
   handle('agent-team:stop', () => ({ stopped: orchestrator.stop() }));
   handle('agent-team:status', () => ({ running: orchestrator.isRunning() }));
   await orchestrator.load();
