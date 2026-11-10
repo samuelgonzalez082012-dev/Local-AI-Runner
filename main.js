@@ -366,7 +366,8 @@ function configureWorkspace() {
       '',
       'Content preview:',
       preview.preview || '(Empty file)'
-    ].join('\n');
+    ].join('
+');
     const answer=await dialog.showMessageBox(mainWindow,{
       type:'question',buttons:['Create file','Cancel'],cancelId:1,defaultId:1,
       title:'Approve generated file?',message:`Create ${relativePath}?`,detail
@@ -384,7 +385,8 @@ function configureWorkspace() {
       '',
       'Change preview:',
       preview.diff || '(No textual differences detected.)'
-    ].join('\n');
+    ].join('
+');
     const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Back up and write','Cancel'],cancelId:1,defaultId:1,title:'Review file changes',message:`Approve changes to ${relativePath}?`,detail});
     if(answer.response!==0) throw new Error('File modification cancelled.');
     return workspace.write(relativePath,payload?.content);
@@ -492,7 +494,8 @@ async function configureWorkspaceRedesign() {
   });
   handle('agent-events:list', options => agentEvents.list(options || {}));
   handle('agent-team:config:get', () => orchestrator.getConfig());
-  handle('agent-team:config:set', value => orchestrator.saveConfig(value));\n  handle('agent-team:models', (provider, baseUrl) => orchestrator.listModels(provider, baseUrl));
+  handle('agent-team:config:set', value => orchestrator.saveConfig(value));
+  handle('agent-team:models', (provider, baseUrl) => orchestrator.listModels(provider, baseUrl));
   handle('agent-team:run', value => orchestrator.run(value));
   handle('agent-team:stop', () => ({ stopped: orchestrator.stop() }));
   handle('agent-team:status', () => ({ running: orchestrator.isRunning() }));
