@@ -2192,6 +2192,7 @@
     if(view==='chat'){renderMessages(true);updateChatHeader();}
     placeBrowserPanel();
   }
+  window.LocalAIWorkspaceNavigate = navigate;
 
   function updateChatHeader(){
     const chat=current();
