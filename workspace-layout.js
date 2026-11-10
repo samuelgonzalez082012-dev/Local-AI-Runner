@@ -44,7 +44,27 @@
       row.querySelector('[data-load]').onclick=load;provider.onchange=load;host.append(row);load();
     }
   }  function renderInspector(slot){const agent=config[selectedAgent]||{name:selectedAgent};const host=slot.querySelector('.wr-agent-events');if(!host)return;slot.querySelector('.wr-inspector-role').textContent=agent.name+' · '+agent.provider+' · '+(agent.model||'No model assigned');const relevant=events.filter(e=>e.agentId===selectedAgent),latest=relevant[relevant.length-1];slot.querySelector('.wr-decision').textContent=latest?.summary||'No decision summary recorded yet.';const filter=slot.querySelector('#wr-event-filter').value;host.replaceChildren();events.filter(e=>(filter==='all'||e.type===filter)&&(e.agentId===selectedAgent||filter==='all')).slice(-30).reverse().forEach(e=>{const row=document.createElement('article');row.className='wr-event';row.innerHTML='<time>'+esc(new Date(e.at).toLocaleTimeString())+'</time><b>'+esc(e.type)+'</b><p>'+esc(e.summary)+'</p>';host.append(row);});slot.querySelectorAll('.wr-agent-node').forEach(b=>b.classList.toggle('selected',b.dataset.agent===selectedAgent));}
-  async function renderFiles(slot){slot.innerHTML='<div class="wr-files"><aside><header><h3>Project files</h3><button id="wr-refresh-files">Refresh</button></header><div id="wr-file-list"></div></aside><section><h3 id="wr-file-title">Select a file</h3><pre id="wr-file-content">Choose a source file to inspect it.</pre></section></div>';const refresh=async()=>{const host=slot.querySelector('#wr-file-list');host.replaceChildren();try{const info=await api().workspace.info();if(!info){host.textContent='Choose a project folder in Projects first.';return;}const items=await api().workspace.list('');items.forEach(f=>{const b=document.createElement('button');b.textContent=(f.type==='directory'?'▸ ':'')+f.name;b.disabled=f.type!=='file';b.onclick=async()=>{slot.querySelector('#wr-file-title').textContent=f.path;slot.querySelector('#wr-file-content').textContent=await api().workspace.read(f.path);};host.append(b);});}catch(e){host.textContent=e.message;}};slot.querySelector('#wr-refresh-files').onclick=refresh;await refresh();}
+  async function renderFiles(slot){
+    let directory='';
+    slot.innerHTML='<div class="wr-files"><aside><header><h3>Project files</h3><button id="wr-refresh-files">Refresh</button></header><div id="wr-file-path"></div><div id="wr-file-list"></div></aside><section><h3 id="wr-file-title">Select a file</h3><pre id="wr-file-content">Choose a source file to inspect it.</pre></section></div>';
+    const refresh=async()=>{
+      const host=slot.querySelector('#wr-file-list'),pathNode=slot.querySelector('#wr-file-path');host.replaceChildren();pathNode.textContent=directory||'/';
+      try{
+        const info=await api().workspace.info();if(!info){host.textContent='Choose a project folder in Projects first.';return;}
+        if(directory){const up=document.createElement('button');up.textContent='↑ Parent folder';up.onclick=()=>{directory=directory.split('/').slice(0,-1).join('/');refresh();};host.append(up);}
+        const items=await api().workspace.list(directory);
+        items.sort((a,b)=>(a.type==='directory'?-1:1)-(b.type==='directory'?-1:1)||a.name.localeCompare(b.name));
+        items.forEach(file=>{
+          const b=document.createElement('button');b.textContent=(file.type==='directory'?'▸ ':'')+file.name;
+          if(file.type==='directory')b.onclick=()=>{directory=file.path;refresh();};
+          else if(file.type==='file')b.onclick=async()=>{try{slot.querySelector('#wr-file-title').textContent=file.path;slot.querySelector('#wr-file-content').textContent=await api().workspace.read(file.path);}catch(e){slot.querySelector('#wr-file-content').textContent=e.message;}};
+          else b.disabled=true;
+          host.append(b);
+        });
+      }catch(e){host.textContent=e.message;}
+    };
+    slot.querySelector('#wr-refresh-files').onclick=refresh;await refresh();
+  }
   async function refreshEvents(){try{const info=await api().workspace.info();events=await api().agentEvents.list({limit:500,project:info?.path||'default'});}catch{}}
   function renderTimeline(slot){slot.innerHTML='<div class="wr-timeline"><header><h2>Execution timeline</h2><button id="wr-timeline-refresh">Refresh</button></header><p>Structured run, task, review, communication and file events.</p><div class="wr-timeline-list"></div></div>';const paint=()=>{const host=slot.querySelector('.wr-timeline-list');host.replaceChildren();events.slice().reverse().forEach(e=>{const item=document.createElement('article');item.className='wr-timeline-item';item.innerHTML='<time>'+esc(new Date(e.at).toLocaleString())+'</time><b>'+esc(e.agentId)+' · '+esc(e.type)+'</b><p>'+esc(e.summary)+'</p>'+(e.detail?'<details><summary>Details</summary><pre>'+esc(e.detail)+'</pre></details>':'');host.append(item);});};slot.querySelector('#wr-timeline-refresh').onclick=async()=>{await refreshEvents();paint();};paint();}
   async function init(){layout=await loadLayout();try{config=await api().agentTeam.getConfig();}catch{}await refreshEvents();root();render();api().agentEvents.onUpdate(e=>{events.push(e);events=events.slice(-500);document.querySelectorAll('.wr-team-layout').forEach(p=>renderInspector(p));document.querySelectorAll('.wr-timeline').forEach(p=>{const group=p.closest('.wr-panel-content');if(group)renderTimeline(group);});});}
