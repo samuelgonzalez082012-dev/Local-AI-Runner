@@ -2168,7 +2168,7 @@
   const VIEW_TITLES={chat:'Chats',projects:'Projects',editor:'Code editor',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
   function navigate(view){
     if(!VIEW_TITLES[view])return;
-    if(window.LocalAIWorkspaceMode&&!window.__workspaceInternalNavigation&&window.LocalAIWorkspaceExit)window.LocalAIWorkspaceExit(view);
+    if(window.LocalAIWorkspaceMode&&!window.__workspaceInternalNavigation&&window.LocalAIWorkspaceExit)window.LocalAIWorkspaceExit(view,true);
     activeView=view;
     if (isMobileLayout()) {
       settings.chatsOpen = false;
