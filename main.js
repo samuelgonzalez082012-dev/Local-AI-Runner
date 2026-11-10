@@ -502,7 +502,7 @@ function configureBrowser() {
 
 
 async function configureWorkspaceRedesign() {
-  const orchestrator = createAgentOrchestrator({ fs, path, userData: app.getPath('userData'), openRouter, workspace, emit: async event => { const info = workspace.getInfo(); const saved = await agentEvents.append({ ...event, project: info?.path || '' }); mainWindow?.webContents.send('agent-events:update', saved); return saved; } });
+  const orchestrator = createAgentOrchestrator({ fs, path, userData: app.getPath('userData'), openRouter, workspace, getRecentEvents: async () => { const info = workspace.getInfo(); return info?.path ? agentEvents.list({ project: info.path, limit: 40 }) : []; }, emit: async event => { const info = workspace.getInfo(); const saved = await agentEvents.append({ ...event, project: info?.path || '' }); mainWindow?.webContents.send('agent-events:update', saved); return saved; } });
   const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => { assertTrustedRenderer(event); return handler(...args); });
   handle('openrouter:set-key', value => openRouter.setKey(value));
   handle('openrouter:status', () => openRouter.status());
