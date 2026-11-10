@@ -32,7 +32,7 @@ const {app,BrowserWindow}=require('electron');
   const timeline=await win.webContents.executeJavaScript("({mounted:!!document.querySelector('.wr-timeline'),items:document.querySelectorAll('.wr-timeline-item').length})");
   check('structured activity timeline renders persisted events',timeline.mounted&&timeline.items>0,JSON.stringify(timeline));
   await win.webContents.executeJavaScript("window.__workspacePath='/workspace/other';document.querySelector('[data-tab=chat]').click()");
-  const projectLayout=await win.webContents.executeJavaScript("({key:Object.keys(localStorage).find(k=>k.endsWith('/workspace/other')),active:window.LocalAIWorkspaceLayout.get().groups.some(g=>g.tabs.includes('chat'))})");
+  const projectLayout=await win.webContents.executeJavaScript("new Promise(resolve=>{const start=Date.now();const tick=()=>{const key=Object.keys(localStorage).find(k=>k.endsWith('/workspace/other'));if(key)resolve({key,active:window.LocalAIWorkspaceLayout.get().groups.some(g=>g.tabs.includes('chat'))});else if(Date.now()-start>3000)resolve({key:'',active:false});else setTimeout(tick,30);};tick();})");
   check('layout state switches to the selected project',!!projectLayout.key&&projectLayout.active,JSON.stringify(projectLayout));
  }catch(error){console.error(error);check('Electron workspace smoke run',false,error.message);}
  finally{await win.destroy();const failed=checks.filter(x=>!x.ok);console.log('WORKSPACE SMOKE: '+(checks.length-failed.length)+'/'+checks.length+' passed');app.exit(failed.length?1:0);}
