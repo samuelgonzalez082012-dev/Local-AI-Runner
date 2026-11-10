@@ -1,10 +1,12 @@
 # AI workspace redesign
 
-This branch implements the integrated AI workspace and Planner-controlled team execution. It is intended to be tested in Electron before merging.
+This branch adds an optional integrated AI workspace and Planner-controlled team execution. The existing standalone Chat, Browser, Editor and other app sections remain available without entering the integrated workspace. Select **AI Workspace** in the sidebar to enter it; choose a normal section or **Exit workspace** to return to standalone mode.
 
 ## Workspace
 
-- A unified tab strip exposes Chat, AI Team, Code Editor, Browser, Projects, Models, Tasks, Files, Activity, Connections, Memory, Insights, Settings and Help.
+- The integrated workspace is opt-in and does not replace the app's normal navigation.
+- A unified tab strip inside AI Workspace exposes Chat, AI Team, Code Editor, Browser, Projects, Models, Tasks, Files, Activity, Connections, Memory, Insights, Settings and Help.
+- Standalone Chat, Browser, Editor and other existing sections remain directly accessible from the sidebar. Selecting one while in AI Workspace exits the integrated mode and restores the native view.
 - Existing Chat, Editor and Browser views are mounted inside the workspace rather than replaced with mock screens.
 - Dragging a tab into a panel creates a second tab group. Each group has its own tab strip; the split can be horizontal or vertical and the divider is resizable.
 - Layout state is saved per selected workspace folder.
