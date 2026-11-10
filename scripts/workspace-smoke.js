@@ -36,6 +36,7 @@ const {app,BrowserWindow}=require('electron');
   const run=await win.webContents.executeJavaScript("new Promise(resolve=>{const start=Date.now();const tick=()=>{const text=document.querySelector('#wr-run-result')?.textContent||'';if(text.includes('Smoke plan completed'))resolve({text,calls:window.__smokeCalls});else if(Date.now()-start>5000)resolve({text,calls:window.__smokeCalls});else setTimeout(tick,50);};tick();})");
   check('team composer routes individual request via Planner',run.text.includes('Smoke plan completed')&&run.calls[0]?.to==='developer-2',JSON.stringify(run.calls));
   await win.webContents.executeJavaScript("document.querySelector('[data-tab=activity]').click()");
+  await win.webContents.executeJavaScript("new Promise(resolve=>{const start=Date.now();const tick=()=>{if(document.querySelector('.wr-timeline'))resolve(true);else if(Date.now()-start>3000)resolve(false);else setTimeout(tick,30);};tick();})");
   const timeline=await win.webContents.executeJavaScript("({mounted:!!document.querySelector('.wr-timeline'),items:document.querySelectorAll('.wr-timeline-item').length})");
   check('structured activity timeline renders persisted events',timeline.mounted&&timeline.items>0,JSON.stringify(timeline));
   await win.webContents.executeJavaScript("window.__workspacePath='/workspace/other';document.querySelector('[data-tab=chat]').click()");
