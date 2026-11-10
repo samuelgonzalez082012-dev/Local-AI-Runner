@@ -11,6 +11,7 @@ const { atomicWriteFile } = require('./services/atomic-file');
 const { createToolRegistry } = require('./services/tool-registry');
 const { createOpenRouterService } = require('./services/openrouter-service');
 const { createAgentEventStore } = require('./services/agent-event-store');
+const { createAgentOrchestrator } = require('./services/agent-orchestrator');
 
 // Preserve the user-data directory created by the original repository package.
 // This keeps existing IndexedDB chats, credentials, workspace selection and MCP settings.
@@ -477,6 +478,7 @@ function configureBrowser() {
 
 
 function configureWorkspaceRedesign() {
+  const orchestrator = createAgentOrchestrator({ fs, path, userData: app.getPath('userData'), openRouter, workspace, emit: async event => { const saved = await agentEvents.append(event); mainWindow?.webContents.send('agent-events:update', saved); return saved; } });
   const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => { assertTrustedRenderer(event); return handler(...args); });
   handle('openrouter:set-key', value => openRouter.setKey(value));
   handle('openrouter:status', () => openRouter.status());
@@ -489,6 +491,12 @@ function configureWorkspaceRedesign() {
     return event;
   });
   handle('agent-events:list', options => agentEvents.list(options || {}));
+  handle('agent-team:config:get', () => orchestrator.getConfig());
+  handle('agent-team:config:set', value => orchestrator.saveConfig(value));
+  handle('agent-team:run', value => orchestrator.run(value));
+  handle('agent-team:stop', () => ({ stopped: orchestrator.stop() }));
+  handle('agent-team:status', () => ({ running: orchestrator.isRunning() }));
+  orchestrator.load().catch(error => console.warn('Could not load agent team settings:', error.message));
 }
 
 function configureScreenCapture() {
