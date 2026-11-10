@@ -66,7 +66,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
   async function event(type, agentId, summary, detail = '', taskId = '') {
     return emit({ type, agentId, taskId, summary: safeText(summary, 500), detail: safeText(detail, 2000) });
   }
-  async function run(instruction) {
+  async function listModels(provider = 'openrouter', baseUrl = 'http://127.0.0.1:11434') {\n    if (provider !== 'ollama') return (await openRouter.models()).map(m => ({ id: m.id, name: m.name || m.id }));\n    const url = new URL(baseUrl);\n    if (url.protocol !== 'http:' || !['127.0.0.1','localhost','::1'].includes(url.hostname)) throw new Error('Ollama model discovery is restricted to localhost.');\n    const response = await fetch(url.origin + '/api/tags', { redirect: 'error' });\n    const data = await response.json().catch(() => ({}));\n    if (!response.ok) throw new Error(data.error || 'Could not load Ollama models.');\n    return (data.models || []).map(m => ({ id: m.name, name: m.name }));\n  }\n  async function run(instruction) {
     if (active) throw new Error('A team run is already active. Stop it before starting another.');
     const prompt = safeText(instruction?.message, 8000).trim();
     if (!prompt) throw new Error('Enter an instruction for the team.');
@@ -131,6 +131,6 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       throw error;
     } finally { active = null; }
   }
-  return { load, getConfig: () => structuredClone(config), saveConfig: save, run, stop: () => { if (active) active.cancelled = true; return !!active; }, isRunning: () => !!active };
+  return { load, getConfig: () => structuredClone(config), saveConfig: save, listModels, run, stop: () => { if (active) active.cancelled = true; return !!active; }, isRunning: () => !!active };
 }
 module.exports = { createAgentOrchestrator, DEFAULT_TEAM };
