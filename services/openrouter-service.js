@@ -14,10 +14,10 @@ function createOpenRouterService({ safeStorage, fs, path, userData }) {
   async function setKey(value) {
     const key = String(value || '').trim();
     if (key && !key.startsWith('sk-or-')) throw new Error('That does not look like an OpenRouter API key.');
+    if (!key) { await fs.rm(keyPath, { force: true }); return { connected: false }; }
     if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure credential storage is unavailable on this device.');
     await fs.mkdir(userData, { recursive: true });
-    if (key) await atomicWriteFile(keyPath, safeStorage.encryptString(key), { mode: 0o600 });
-    else await fs.rm(keyPath, { force: true });
+    await atomicWriteFile(keyPath, safeStorage.encryptString(key), { mode: 0o600 });
     return { connected: !!key };
   }
   async function request(endpoint, options = {}) {
