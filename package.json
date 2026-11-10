@@ -13,7 +13,8 @@
     "start": "electron .",
     "test": "node --test",
     "smoke": "electron scripts/browser-smoke.js",
-    "smoke:workspace": "xvfb-run -a electron --no-sandbox --disable-gpu scripts/workspace-smoke.js"
+    "smoke:workspace": "xvfb-run -a electron --no-sandbox --disable-gpu scripts/workspace-smoke.js",
+    "smoke:browser": "xvfb-run -a electron --no-sandbox --disable-gpu scripts/browser-smoke.js"
   },
   "dependencies": {
     "mammoth": "1.13.0",
