@@ -15,6 +15,7 @@ function parseJson(text) {
 }
 function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, emit }) {
   const configPath = path.join(userData, 'agent-team-config.json');
+  const templatesPath = path.join(userData, 'agent-team-templates.json');
   let config = structuredClone(DEFAULT_TEAM), active = null;
   async function load() {
     try {
@@ -64,6 +65,26 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       if (e.name === 'AbortError') throw new Error(signal?.aborted ? 'Team run stopped.' : 'Ollama request timed out.');
       throw e;
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
+  }
+  async function listTemplates() {
+    try { const saved = JSON.parse(await fs.readFile(templatesPath, 'utf8')); return Object.keys(saved || {}).sort(); }
+    catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+  }
+  async function saveTemplate(name) {
+    const label = safeText(name, 50).trim();
+    if (!label) throw new Error('Enter a name for this team template.');
+    let saved = {};
+    try { saved = JSON.parse(await fs.readFile(templatesPath, 'utf8')) || {}; } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    saved[label] = structuredClone(config);
+    await fs.mkdir(userData, { recursive: true });
+    await fs.writeFile(templatesPath, JSON.stringify(saved, null, 2), { mode: 0o600 });
+    return Object.keys(saved).sort();
+  }
+  async function loadTemplate(name) {
+    const label = safeText(name, 50);
+    const saved = JSON.parse(await fs.readFile(templatesPath, 'utf8'));
+    if (!saved || !saved[label]) throw new Error('Team template not found.');
+    return save(saved[label]);
   }
   async function listModels(provider = 'openrouter', baseUrl = 'http://127.0.0.1:11434') {
     if (provider !== 'ollama') return (await openRouter.models()).map(m => ({ id: m.id, name: m.name || m.id }));
@@ -145,7 +166,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
     } finally { active = null; }
   }
   return {
-    load, getConfig: () => structuredClone(config), saveConfig: save, listModels, run,
+    load, getConfig: () => structuredClone(config), saveConfig: save, listModels, listTemplates, saveTemplate, loadTemplate, run,
     stop: () => { if (active) { active.cancelled = true; active.controller.abort(); } return !!active; },
     isRunning: () => !!active
   };
