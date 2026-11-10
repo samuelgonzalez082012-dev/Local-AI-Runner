@@ -56,7 +56,8 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
   }),
   agentTeam: Object.freeze({
     getConfig() { return ipcRenderer.invoke('agent-team:config:get'); },
-    saveConfig(value) { return ipcRenderer.invoke('agent-team:config:set', value); },\n    models(provider, baseUrl) { return ipcRenderer.invoke('agent-team:models', provider, baseUrl); },
+    saveConfig(value) { return ipcRenderer.invoke('agent-team:config:set', value); },
+    models(provider, baseUrl) { return ipcRenderer.invoke('agent-team:models', provider, baseUrl); },
     run(message) { return ipcRenderer.invoke('agent-team:run', { message: String(message || '') }); },
     stop() { return ipcRenderer.invoke('agent-team:stop'); },
     status() { return ipcRenderer.invoke('agent-team:status'); }
