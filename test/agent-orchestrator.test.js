@@ -85,3 +85,25 @@ test('Team configuration persists independent provider and model choices', async
   assert.equal(reloaded.getConfig()['developer-1'].provider, 'ollama');
   assert.equal(reloaded.getConfig().planner.model, 'planner-a');
 });
+
+
+test('an individual recipient request cannot bypass Planner assignment authority', async t => {
+  const calls = [];
+  const { service } = await fixture(t, async payload => {
+    calls.push(payload.model);
+    return { choices: [{ message: { content: JSON.stringify({
+      plan: 'Planner declined to delegate to the requested developer',
+      assignments: [{ agentId: 'developer-1', task: 'Different task' }]
+    }) } }] };
+  });
+  await service.saveConfig({
+    planner: { provider: 'openrouter', model: 'planner' },
+    'developer-1': { provider: 'openrouter', model: 'developer-1' },
+    'developer-2': { provider: 'openrouter', model: 'developer-2' },
+    reviewer: { provider: 'openrouter', model: 'reviewer' }
+  });
+  const result = await service.run({ message: 'Please ask Developer 2', to: 'developer-2' });
+  assert.deepEqual(calls, ['planner']);
+  assert.equal(result.assignments.length, 0);
+  assert.match(result.needsUserInput, /Planner did not delegate/);
+});
