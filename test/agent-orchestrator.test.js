@@ -64,6 +64,16 @@ test('Team configuration persists independent provider and model choices', async
     'developer-2': { provider: 'openrouter', model: 'dev-b' },
     reviewer: { provider: 'openrouter', model: 'review-c' }
   });
+  await service.saveTemplate('Balanced team');
+  await service.saveConfig({
+    planner: { provider: 'openrouter', model: 'other-planner' },
+    'developer-1': { provider: 'ollama', model: 'other-coder', baseUrl: 'http://127.0.0.1:11434' },
+    'developer-2': { provider: 'openrouter', model: 'dev-b' },
+    reviewer: { provider: 'openrouter', model: 'review-c' }
+  });
+  await service.loadTemplate('Balanced team');
+  assert.deepEqual(await service.listTemplates(), ['Balanced team']);
+  assert.equal(service.getConfig().planner.model, 'planner-a');
   const reloaded = createAgentOrchestrator({
     fs, path, userData,
     openRouter: { chat: async () => ({}), models: async () => [] },
