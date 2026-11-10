@@ -383,7 +383,7 @@ function configureWorkspace() {
     });
     if(answer.response!==0) throw new Error('File creation cancelled.');
     const saved = await workspace.create(relativePath,content);
-    const activity = await agentEvents.append({ type:'file-created', agentId:'user', summary:'User approved file creation', file:relativePath });
+    const activity = await agentEvents.append({ type:'file-created', agentId:'user', summary:'User approved file creation', file:relativePath, project:workspace.getInfo()?.path || '' });
     mainWindow?.webContents.send('agent-events:update', activity);
     return saved;
     });
@@ -403,7 +403,7 @@ function configureWorkspace() {
     const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Back up and write','Cancel'],cancelId:1,defaultId:1,title:'Review file changes',message:`Approve changes to ${relativePath}?`,detail});
     if(answer.response!==0) throw new Error('File modification cancelled.');
     const saved = await workspace.write(relativePath,payload?.content);
-    const activity = await agentEvents.append({ type:'file-written', agentId:'user', summary:'User approved file modification', detail:preview.diff, file:relativePath });
+    const activity = await agentEvents.append({ type:'file-written', agentId:'user', summary:'User approved file modification', detail:preview.diff, file:relativePath, project:workspace.getInfo()?.path || '' });
     mainWindow?.webContents.send('agent-events:update', activity);
     return saved;
     });
@@ -417,7 +417,7 @@ function configureWorkspace() {
       const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Restore backup','Cancel'],cancelId:1,defaultId:1,title:'Restore previous file version?',message:`Restore ${backup.relativePath}?`,detail:'The current version will first be backed up, so you can recover it afterward.'});
       if(answer.response!==0)throw new Error('Backup restore cancelled.');
       const saved = await workspace.restoreBackup(String(id));
-      const activity = await agentEvents.append({ type:'file-restored', agentId:'user', summary:'User restored a file backup', file:backup.relativePath });
+      const activity = await agentEvents.append({ type:'file-restored', agentId:'user', summary:'User restored a file backup', file:backup.relativePath, project:workspace.getInfo()?.path || '' });
       mainWindow?.webContents.send('agent-events:update', activity);
       return saved;
     });
@@ -502,7 +502,7 @@ function configureBrowser() {
 
 
 async function configureWorkspaceRedesign() {
-  const orchestrator = createAgentOrchestrator({ fs, path, userData: app.getPath('userData'), openRouter, workspace, emit: async event => { const saved = await agentEvents.append(event); mainWindow?.webContents.send('agent-events:update', saved); return saved; } });
+  const orchestrator = createAgentOrchestrator({ fs, path, userData: app.getPath('userData'), openRouter, workspace, emit: async event => { const info = workspace.getInfo(); const saved = await agentEvents.append({ ...event, project: info?.path || '' }); mainWindow?.webContents.send('agent-events:update', saved); return saved; } });
   const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => { assertTrustedRenderer(event); return handler(...args); });
   handle('openrouter:set-key', value => openRouter.setKey(value));
   handle('openrouter:status', () => openRouter.status());
@@ -510,7 +510,8 @@ async function configureWorkspaceRedesign() {
   handle('openrouter:chat', payload => openRouter.chat(payload));
   handle('agent-events:append', async payload => {
     if (!payload || typeof payload !== 'object') throw new Error('Invalid activity event.');
-    const event = await agentEvents.append(payload);
+    const info = workspace.getInfo();
+    const event = await agentEvents.append({ ...payload, project: info?.path || '' });
     mainWindow?.webContents.send('agent-events:update', event);
     return event;
   });
