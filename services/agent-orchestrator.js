@@ -125,10 +125,10 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       ].join('\n\n');
       const planText = await callAgent('planner', [{ role: 'system', content: 'Return concise task plans as JSON only.' }, { role: 'user', content: plannerPrompt }], { maxTokens: 1800 });
       let plan;
-      try { plan = parseJson(planText); } catch { plan = { plan: planText.slice(0, 1200), assignments: [{ agentId: 'developer-1', task: prompt }] }; }
+      try { plan = parseJson(planText); } catch { plan = { plan: planText.slice(0, 1200), assignments: [], needsUserInput: 'Planner response was not structured as a task plan. Please clarify or retry.' }; }
       let assignments = Array.isArray(plan.assignments) ? plan.assignments.slice(0, 4).filter(x => ['developer-1', 'developer-2'].includes(x.agentId) && safeText(x.task, 3000).trim()) : [];
-      if (recipient === 'developer-1' || recipient === 'developer-2') assignments = [{ agentId: recipient, task: prompt }];
-      if (!assignments.length && !plan.needsUserInput && recipient !== 'reviewer') assignments = [{ agentId: 'developer-1', task: prompt }];
+      if (recipient === 'developer-1' || recipient === 'developer-2') assignments = assignments.filter(task => task.agentId === recipient);
+      if (!assignments.length && !plan.needsUserInput && recipient !== 'reviewer') plan.needsUserInput = 'Planner did not delegate this request. No agent task was started.';
       await record('plan-created', 'planner', safeText(plan.plan || 'Plan created', 500), JSON.stringify(assignments), runId);
       const contextFiles = [];
       const agentReports = [];
