@@ -24,3 +24,4 @@
 
 .wr-template-bar{display:grid;gap:6px;padding:10px;border:1px solid var(--border-color,#303846);border-radius:8px}.wr-template-bar label{display:grid;gap:4px;font-size:12px}.wr-template-bar input,.wr-template-bar select{padding:8px;border:1px solid var(--border-color,#303846);border-radius:7px;background:var(--panel-bg,#151b26);color:inherit}.wr-template-bar button{padding:8px;border:1px solid var(--border-color,#303846);border-radius:7px;background:var(--panel-bg,#151b26);color:inherit;cursor:pointer}
 .wr-agent-config textarea{min-width:0;padding:8px;border:1px solid var(--border-color,#303846);border-radius:7px;background:var(--panel-bg,#151b26);color:inherit;resize:vertical;font:inherit;font-size:12px}
+.wr-graph{display:flex;flex-direction:column;align-items:center;gap:8px}.wr-dev-row{display:flex;gap:18px;justify-content:center;flex-wrap:wrap}.wr-edge-label{font-size:11px;color:var(--muted,#929bad);padding:2px 8px}.wr-agent-node{min-width:170px}
