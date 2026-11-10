@@ -6,7 +6,7 @@
     root.dataset.providerReady = '1';
     const panel = document.createElement('details');
     panel.className = 'wr-provider-drawer';
-    panel.innerHTML = '<summary>OpenRouter connection · secure API key</summary><div class="wr-provider-body"><input id="wr-global-key" type="password" autocomplete="off" placeholder="OpenRouter API key"><button id="wr-global-save">Save key securely</button><button id="wr-global-test">Test connection</button><p id="wr-global-status" role="status">API key is encrypted by Electron secure storage. Each agent can select its own OpenRouter model in Team settings.</p></div>';
+    panel.innerHTML = '<summary>OpenRouter connection · secure API key</summary><div class="wr-provider-body"><input id="wr-global-key" type="password" autocomplete="off" placeholder="OpenRouter API key"><button id="wr-global-save">Save key securely</button><button id="wr-global-clear">Clear key</button><button id="wr-global-test">Test connection</button><p id="wr-global-status" role="status">API key is encrypted by Electron secure storage. Each agent can select its own OpenRouter model in Team settings.</p></div>';
     root.append(panel);
     const status = panel.querySelector('#wr-global-status');
     const load = async () => {
@@ -24,6 +24,7 @@
         await load();
       } catch (error) { status.textContent = error.message; }
     };
+    panel.querySelector('#wr-global-clear').onclick = async () => { try { await window.localAI.openRouter.setKey(''); await load(); } catch (error) { status.textContent = error.message; } };
     panel.querySelector('#wr-global-test').onclick = load;
     await load();
   };
