@@ -477,7 +477,7 @@ function configureBrowser() {
 }
 
 
-function configureWorkspaceRedesign() {
+async function configureWorkspaceRedesign() {
   const orchestrator = createAgentOrchestrator({ fs, path, userData: app.getPath('userData'), openRouter, workspace, emit: async event => { const saved = await agentEvents.append(event); mainWindow?.webContents.send('agent-events:update', saved); return saved; } });
   const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => { assertTrustedRenderer(event); return handler(...args); });
   handle('openrouter:set-key', value => openRouter.setKey(value));
@@ -496,7 +496,7 @@ function configureWorkspaceRedesign() {
   handle('agent-team:run', value => orchestrator.run(value));
   handle('agent-team:stop', () => ({ stopped: orchestrator.stop() }));
   handle('agent-team:status', () => ({ running: orchestrator.isRunning() }));
-  orchestrator.load().catch(error => console.warn('Could not load agent team settings:', error.message));
+  await orchestrator.load();
 }
 
 function configureScreenCapture() {
@@ -548,7 +548,7 @@ app.whenReady().then(async()=>{
   configureSystemMetrics();
   configureWorkspace();
   configureToolRegistry();
-  configureWorkspaceRedesign();
+  await configureWorkspaceRedesign();
   await Promise.all([toolRegistry.load(), agentEvents.load()]);
   await configureEditorBridge();
   ipcMain.handle('editor:open-window',event=>{assertTrustedRenderer(event);return createEditorWindow();});
