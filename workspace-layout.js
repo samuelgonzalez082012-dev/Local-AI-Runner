@@ -3,7 +3,8 @@
   'use strict';
   const ids=['chat','agent-team','editor','browser','projects','models','tasks','files','activity','connections','memory','insights','settings','help'];
   const names={chat:'AI Chat','agent-team':'AI Team',editor:'Code Editor',browser:'Browser',projects:'Projects',models:'Models',tasks:'Tasks',files:'Files',activity:'Activity',connections:'Connections',memory:'Memory',insights:'Insights',settings:'Settings',help:'Help'};
-  let projectKey='default',layout,events=[],config={},selectedAgent='planner',running=false;\n  const surfaceViews=new Map();
+  let projectKey='default',layout,events=[],config={},selectedAgent='planner',running=false;
+  const surfaceViews=new Map();
   const DEFAULT=()=>({orientation:'horizontal',ratio:50,groups:[{id:'g1',tabs:['chat','agent-team','editor','browser','files','activity'],active:'agent-team'},{id:'g2',tabs:[],active:''}]});
   const $=(s,r=document)=>r.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),api=()=>window.localAI;
   const key=()=>'lair.workspace-layout.v2:'+projectKey;
