@@ -80,6 +80,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
   async function run(instruction) {
     if (active) throw new Error('A team run is already active. Stop it before starting another.');
     const prompt = safeText(instruction?.message, 8000).trim();
+    const recipient = ['planner', 'developer-1', 'developer-2', 'reviewer'].includes(instruction?.to) ? instruction.to : 'team';
     if (!prompt) throw new Error('Enter an instruction for the team.');
     active = { id: Date.now().toString(36), cancelled: false, controller: new AbortController() };
     const runId = active.id, proposals = [];
@@ -91,6 +92,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
         'You are the Planner for a software agent team. You are the ONLY role that may create or assign tasks. Developers may only execute their assigned task, report progress, or request clarification. Never claim a tool was used.',
         'Return ONLY valid JSON: {"plan":"short decision summary","assignments":[{"agentId":"developer-1|developer-2","task":"specific task"}],"needsUserInput":""}. Maximum 4 assignments. Assign only developers. The Reviewer is invoked separately after developers propose changes. Do not include chain-of-thought.',
         'User instruction: ' + prompt,
+        'Requested recipient: ' + recipient + '. If a developer is named, assign the task to that developer if appropriate. Planner remains the only role that can assign work. If Reviewer is named, ask Reviewer for an analysis after planning; do not let Reviewer assign tasks.',
         'Workspace: ' + JSON.stringify(workspaceInfo),
         'Workspace files: ' + JSON.stringify(files.slice(0, 100))
       ].join('\n\n');
@@ -98,7 +100,8 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       let plan;
       try { plan = parseJson(planText); } catch { plan = { plan: planText.slice(0, 1200), assignments: [{ agentId: 'developer-1', task: prompt }] }; }
       let assignments = Array.isArray(plan.assignments) ? plan.assignments.slice(0, 4).filter(x => ['developer-1', 'developer-2'].includes(x.agentId) && safeText(x.task, 3000).trim()) : [];
-      if (!assignments.length && !plan.needsUserInput) assignments = [{ agentId: 'developer-1', task: prompt }];
+      if (recipient === 'developer-1' || recipient === 'developer-2') assignments = [{ agentId: recipient, task: prompt }];
+      if (!assignments.length && !plan.needsUserInput && recipient !== 'reviewer') assignments = [{ agentId: 'developer-1', task: prompt }];
       await record('plan-created', 'planner', safeText(plan.plan || 'Plan created', 500), JSON.stringify(assignments), runId);
       const contextFiles = [];
       if (workspaceInfo) for (const f of files.filter(x => x.type === 'file').slice(0, 12)) {
@@ -124,10 +127,10 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
         await record('task-completed', task.agentId, safeText(result.summary || 'Task completed', 500), JSON.stringify({ findings: result.findings || [], questions: result.questions || [], proposedFiles: (result.files || []).length }), runId);
       }
       if (active?.cancelled) throw new Error('Team run stopped.');
-      if (proposals.length) {
+      if (proposals.length || recipient === 'reviewer') {
         const reviewText = await callAgent('reviewer', [
           { role: 'system', content: 'You are the Reviewer. Review proposed changes only. Do not edit files or delegate. Return JSON {"summary":"...","issues":["..."],"approvedPaths":["..."]}. Assess correctness, safety, consistency, and test coverage. No chain-of-thought.' },
-          { role: 'user', content: JSON.stringify({ objective: prompt, proposals: proposals.map(p => ({ path: p.path, mode: p.mode, content: p.content.slice(0, 30000) })) }).slice(0, MAX_CONTEXT) }
+          { role: 'user', content: JSON.stringify({ objective: prompt, workspaceFiles: contextFiles, proposals: proposals.map(p => ({ path: p.path, mode: p.mode, content: p.content.slice(0, 30000) })) }).slice(0, MAX_CONTEXT) }
         ], { maxTokens: 2200 });
         let review;
         try { review = parseJson(reviewText); } catch { review = { summary: reviewText.slice(0, 1500), issues: [], approvedPaths: [] }; }
