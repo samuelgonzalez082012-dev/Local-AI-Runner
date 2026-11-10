@@ -346,6 +346,15 @@ function configureDocuments() {
     return extractDocument(payload || {});
   });
 }
+const workspaceFileLocks = new Set();
+async function withWorkspaceFileLock(relativePath, work) {
+  let key = String(relativePath || '').replace(/\\/g, '/');
+  if (process.platform === 'win32') key = key.toLowerCase();
+  if (!key || workspaceFileLocks.has(key)) throw new Error('This file is already being modified. Wait for the current save to finish.');
+  workspaceFileLocks.add(key);
+  try { return await work(); } finally { workspaceFileLocks.delete(key); }
+}
+
 function configureWorkspace() {
   workspace = createWorkspaceService({ dialog, app });
   ipcMain.handle('workspace:choose', async (event, title) => { assertTrustedRenderer(event); return workspace.choose(mainWindow, typeof title === 'string' ? title.slice(0, 120) : undefined); });
@@ -358,6 +367,7 @@ function configureWorkspace() {
   ipcMain.handle('workspace:create', async (event,payload) => {
     assertTrustedRenderer(event);
     const relativePath=String(payload?.relativePath||'').slice(0,500);
+    return withWorkspaceFileLock(relativePath, async () => {
     const content=String(payload?.content??'');
     const preview=await workspace.previewCreate(relativePath,content);
     const detail=[
@@ -372,11 +382,16 @@ function configureWorkspace() {
       title:'Approve generated file?',message:`Create ${relativePath}?`,detail
     });
     if(answer.response!==0) throw new Error('File creation cancelled.');
-    return workspace.create(relativePath,content);
+    const saved = await workspace.create(relativePath,content);
+    const activity = await agentEvents.append({ type:'file-created', agentId:'user', summary:'User approved file creation', file:relativePath });
+    mainWindow?.webContents.send('agent-events:update', activity);
+    return saved;
+    });
   });
   ipcMain.handle('workspace:write', async (event,payload) => {
     assertTrustedRenderer(event);
     const relativePath=String(payload?.relativePath||'').slice(0,500);
+    return withWorkspaceFileLock(relativePath, async () => {
     const preview=await workspace.previewWrite(relativePath,payload?.content);
     const detail=[
       preview.exists?'An existing file will be backed up before replacement.':'This will create a new file.',
@@ -387,7 +402,11 @@ function configureWorkspace() {
     ].join('\n');
     const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Back up and write','Cancel'],cancelId:1,defaultId:1,title:'Review file changes',message:`Approve changes to ${relativePath}?`,detail});
     if(answer.response!==0) throw new Error('File modification cancelled.');
-    return workspace.write(relativePath,payload?.content);
+    const saved = await workspace.write(relativePath,payload?.content);
+    const activity = await agentEvents.append({ type:'file-written', agentId:'user', summary:'User approved file modification', detail:preview.diff, file:relativePath });
+    mainWindow?.webContents.send('agent-events:update', activity);
+    return saved;
+    });
   });
   ipcMain.handle('workspace:backups',event=>{assertTrustedRenderer(event);return workspace.backups();});
   ipcMain.handle('workspace:restore',async(event,id)=>{
