@@ -13,6 +13,7 @@
   <script src="renderer.js" defer></script>
   <script src="dock-resize.js" defer></script>
   <script src="editor-ui.js" defer></script>
+  <link rel="stylesheet" href="workspace-redesign.css">
 </head>
 <body data-chats="left" data-settings="right" data-density="comfortable">
   <div id="appShell">
@@ -31,6 +32,7 @@
         <button class="nav-item" data-view="models"><span class="nav-icon">◈</span><span>Models</span></button>
         <button class="nav-item" data-view="browser"><span class="nav-icon">◍</span><span>Browser</span></button>
         <button class="nav-item" data-view="tasks"><span class="nav-icon">◷</span><span>Tasks</span><span id="taskCount" class="nav-count"></span></button>
+        <button class="nav-item workspace-entry" id="enterAiWorkspace" type="button"><span class="nav-icon">▣</span><span>AI Workspace</span></button>
       </nav>
       <div class="nav-section-label nav-label-row"><span id="recentChatsLabel">RECENT CHATS</span><div class="nav-label-actions"><button id="toggleArchived" class="icon-btn tiny" title="Show archived conversations" aria-label="Show archived conversations">▤</button><button id="searchOpen" class="icon-btn tiny" title="Search all content">⌕</button></div></div>
       <label class="sidebar-search"><span>⌕</span><input id="conversationSearch" type="search" placeholder="Filter conversations" aria-label="Filter conversations"></label>
@@ -141,5 +143,7 @@
   <dialog id="themeProfileDialog" class="app-dialog" aria-labelledby="themeProfileDialogTitle"><form id="themeProfileForm"><div class="dialog-header"><div><span class="subtle-label">APPEARANCE</span><h2 id="themeProfileDialogTitle">Save appearance profile</h2></div><button class="icon-btn" type="button" data-close-dialog="themeProfileDialog" aria-label="Close">✕</button></div><label class="field">Profile name<input id="themeProfileName" maxlength="40" required placeholder="e.g. Focus mode"></label><p class="hint">The profile saves your current colors, typography and layout preferences.</p><div class="button-row"><button class="btn" type="button" data-close-dialog="themeProfileDialog">Cancel</button><button class="btn primary" type="submit">Save profile</button></div></form></dialog>
   <dialog id="conversationActionsDialog" class="app-dialog" aria-labelledby="conversationActionsTitle"><form method="dialog" id="conversationActionsForm"><div class="dialog-header"><div><span class="subtle-label" id="conversationActionsEyebrow">CONVERSATION</span><h2 id="conversationActionsTitle">Conversation options</h2></div><button class="icon-btn" id="conversationActionsClose" value="cancel" aria-label="Close">✕</button></div><div id="conversationActionButtons" class="conversation-action-list"><button class="btn" type="button" data-conversation-action="rename">Rename</button><button class="btn" type="button" data-conversation-action="pin">Pin</button><button class="btn" type="button" data-conversation-action="archive">Archive</button><button class="btn danger" type="button" data-conversation-action="delete">Delete</button></div></form></dialog>
   <dialog id="confirmDialog" class="app-dialog" aria-labelledby="confirmDialogTitle"><form id="confirmDialogForm" method="dialog"><div class="dialog-header"><div><span class="subtle-label">CONFIRMATION</span><h2 id="confirmDialogTitle">Please confirm</h2></div><button class="icon-btn" value="cancel" aria-label="Close">✕</button></div><p id="confirmDialogMessage" class="confirm-message"></p><p id="confirmDialogDetail" class="muted-text"></p><div class="button-row"><button class="btn" value="cancel">Cancel</button><button id="confirmDialogAccept" class="btn danger" value="confirm">Continue</button></div></form></dialog>
+  <script src="workspace-layout.js"></script>
+  <script src="workspace-openrouter-ui.js"></script>
 </body>
 </html>

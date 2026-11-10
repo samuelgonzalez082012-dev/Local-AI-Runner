@@ -9,6 +9,9 @@ const { createMcpService } = require('./services/mcp-service');
 const { createBrowserService } = require('./services/browser-service');
 const { atomicWriteFile } = require('./services/atomic-file');
 const { createToolRegistry } = require('./services/tool-registry');
+const { createOpenRouterService } = require('./services/openrouter-service');
+const { createAgentEventStore } = require('./services/agent-event-store');
+const { createAgentOrchestrator } = require('./services/agent-orchestrator');
 
 // Preserve the user-data directory created by the original repository package.
 // This keeps existing IndexedDB chats, credentials, workspace selection and MCP settings.
@@ -24,6 +27,8 @@ let workspace = null;
 let connectors = null;
 let browser = null;
 let toolRegistry = null;
+const openRouter = createOpenRouterService({ safeStorage, fs, path, userData: app.getPath('userData') });
+const agentEvents = createAgentEventStore({ fs, path, userData: app.getPath('userData') });
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
 const editorWindows = new Set();
@@ -341,6 +346,15 @@ function configureDocuments() {
     return extractDocument(payload || {});
   });
 }
+const workspaceFileLocks = new Set();
+async function withWorkspaceFileLock(relativePath, work) {
+  let key = String(relativePath || '').replace(/\\/g, '/');
+  if (process.platform === 'win32') key = key.toLowerCase();
+  if (!key || workspaceFileLocks.has(key)) throw new Error('This file is already being modified. Wait for the current save to finish.');
+  workspaceFileLocks.add(key);
+  try { return await work(); } finally { workspaceFileLocks.delete(key); }
+}
+
 function configureWorkspace() {
   workspace = createWorkspaceService({ dialog, app });
   ipcMain.handle('workspace:choose', async (event, title) => { assertTrustedRenderer(event); return workspace.choose(mainWindow, typeof title === 'string' ? title.slice(0, 120) : undefined); });
@@ -353,6 +367,7 @@ function configureWorkspace() {
   ipcMain.handle('workspace:create', async (event,payload) => {
     assertTrustedRenderer(event);
     const relativePath=String(payload?.relativePath||'').slice(0,500);
+    return withWorkspaceFileLock(relativePath, async () => {
     const content=String(payload?.content??'');
     const preview=await workspace.previewCreate(relativePath,content);
     const detail=[
@@ -367,11 +382,16 @@ function configureWorkspace() {
       title:'Approve generated file?',message:`Create ${relativePath}?`,detail
     });
     if(answer.response!==0) throw new Error('File creation cancelled.');
-    return workspace.create(relativePath,content);
+    const saved = await workspace.create(relativePath,content);
+    const activity = await agentEvents.append({ type:'file-created', agentId:'user', summary:'User approved file creation', file:relativePath, project:workspace.getInfo()?.path || '' });
+    mainWindow?.webContents.send('agent-events:update', activity);
+    return saved;
+    });
   });
   ipcMain.handle('workspace:write', async (event,payload) => {
     assertTrustedRenderer(event);
     const relativePath=String(payload?.relativePath||'').slice(0,500);
+    return withWorkspaceFileLock(relativePath, async () => {
     const preview=await workspace.previewWrite(relativePath,payload?.content);
     const detail=[
       preview.exists?'An existing file will be backed up before replacement.':'This will create a new file.',
@@ -382,16 +402,25 @@ function configureWorkspace() {
     ].join('\n');
     const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Back up and write','Cancel'],cancelId:1,defaultId:1,title:'Review file changes',message:`Approve changes to ${relativePath}?`,detail});
     if(answer.response!==0) throw new Error('File modification cancelled.');
-    return workspace.write(relativePath,payload?.content);
+    const saved = await workspace.write(relativePath,payload?.content);
+    const activity = await agentEvents.append({ type:'file-written', agentId:'user', summary:'User approved file modification', detail:preview.diff, file:relativePath, project:workspace.getInfo()?.path || '' });
+    mainWindow?.webContents.send('agent-events:update', activity);
+    return saved;
+    });
   });
   ipcMain.handle('workspace:backups',event=>{assertTrustedRenderer(event);return workspace.backups();});
   ipcMain.handle('workspace:restore',async(event,id)=>{
     assertTrustedRenderer(event);
     const backup=(await workspace.backups()).find(entry=>entry.id===String(id));
     if(!backup)throw new Error('Backup not found.');
-    const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Restore backup','Cancel'],cancelId:1,defaultId:1,title:'Restore previous file version?',message:`Restore ${backup.relativePath}?`,detail:'The current version will first be backed up, so you can recover it afterward.'});
-    if(answer.response!==0)throw new Error('Backup restore cancelled.');
-    return workspace.restoreBackup(String(id));
+    return withWorkspaceFileLock(backup.relativePath, async () => {
+      const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Restore backup','Cancel'],cancelId:1,defaultId:1,title:'Restore previous file version?',message:`Restore ${backup.relativePath}?`,detail:'The current version will first be backed up, so you can recover it afterward.'});
+      if(answer.response!==0)throw new Error('Backup restore cancelled.');
+      const saved = await workspace.restoreBackup(String(id));
+      const activity = await agentEvents.append({ type:'file-restored', agentId:'user', summary:'User restored a file backup', file:backup.relativePath, project:workspace.getInfo()?.path || '' });
+      mainWindow?.webContents.send('agent-events:update', activity);
+      return saved;
+    });
   });
 }
 function configureToolRegistry() {
@@ -471,6 +500,36 @@ function configureBrowser() {
   });
 }
 
+
+async function configureWorkspaceRedesign() {
+  const orchestrator = createAgentOrchestrator({ fs, path, userData: app.getPath('userData'), openRouter, workspace, getRecentEvents: async () => { const info = workspace.getInfo(); return info?.path ? agentEvents.list({ project: info.path, limit: 40 }) : []; }, emit: async event => { const info = workspace.getInfo(); const saved = await agentEvents.append({ ...event, project: info?.path || '' }); mainWindow?.webContents.send('agent-events:update', saved); return saved; } });
+  const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => { assertTrustedRenderer(event); return handler(...args); });
+  handle('openrouter:set-key', value => openRouter.setKey(value));
+  handle('openrouter:status', () => openRouter.status());
+  handle('openrouter:models', () => openRouter.models());
+  handle('openrouter:chat', payload => openRouter.chat(payload));
+  handle('agent-events:append', async payload => {
+    if (!payload || typeof payload !== 'object') throw new Error('Invalid activity event.');
+    const info = workspace.getInfo();
+    const event = await agentEvents.append({ ...payload, project: info?.path || '' });
+    mainWindow?.webContents.send('agent-events:update', event);
+    return event;
+  });
+  handle('agent-events:list', options => agentEvents.list(options || {}));
+  handle('agent-team:config:get', () => orchestrator.getConfig());
+  handle('agent-team:config:set', value => orchestrator.saveConfig(value));
+  handle('agent-team:models', (provider, baseUrl) => orchestrator.listModels(provider, baseUrl));
+  handle('agent-team:templates:list', () => orchestrator.listTemplates());
+  handle('agent-team:templates:save', name => orchestrator.saveTemplate(name));
+  handle('agent-team:templates:load', name => orchestrator.loadTemplate(name));
+  handle('agent-team:run', value => orchestrator.run(value));
+  handle('agent-team:pause', () => ({ paused: orchestrator.pause() }));
+  handle('agent-team:resume', () => ({ resumed: orchestrator.resume() }));
+  handle('agent-team:stop', () => ({ stopped: orchestrator.stop() }));
+  handle('agent-team:status', () => ({ running: orchestrator.isRunning() }));
+  await orchestrator.load();
+}
+
 function configureScreenCapture() {
   session.defaultSession.setPermissionRequestHandler((webContents,permission,callback)=>{
     callback(permission==='display-capture' && mainWindow && !mainWindow.isDestroyed() && webContents===mainWindow.webContents);
@@ -520,7 +579,8 @@ app.whenReady().then(async()=>{
   configureSystemMetrics();
   configureWorkspace();
   configureToolRegistry();
-  await toolRegistry.load();
+  await configureWorkspaceRedesign();
+  await Promise.all([toolRegistry.load(), agentEvents.load()]);
   await configureEditorBridge();
   ipcMain.handle('editor:open-window',event=>{assertTrustedRenderer(event);return createEditorWindow();});
   configureConnectors();

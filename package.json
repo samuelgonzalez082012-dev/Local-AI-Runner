@@ -1,7 +1,7 @@
 {
   "name": "local-ai-runner",
   "productName": "Local AI Runner",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "A private desktop workspace for chatting with local AI models.",
   "author": "samue",
   "private": true,
@@ -12,7 +12,9 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test",
-    "smoke": "electron scripts/browser-smoke.js"
+    "smoke": "electron scripts/browser-smoke.js",
+    "smoke:workspace": "xvfb-run -a electron --no-sandbox --disable-gpu scripts/workspace-smoke.js",
+    "smoke:browser": "xvfb-run -a electron --no-sandbox --disable-gpu scripts/browser-smoke.js"
   },
   "dependencies": {
     "mammoth": "1.13.0",

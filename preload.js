@@ -48,6 +48,30 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     setPreferences(value) { return ipcRenderer.invoke('editor:preferences:set', value); },
     onPreferences(callback) { return subscribe('editor:preferences:update', callback); }
   }),
+  openRouter: Object.freeze({
+    setKey(value) { return ipcRenderer.invoke('openrouter:set-key', String(value || '')); },
+    status() { return ipcRenderer.invoke('openrouter:status'); },
+    models() { return ipcRenderer.invoke('openrouter:models'); },
+    chat(payload) { return ipcRenderer.invoke('openrouter:chat', payload); }
+  }),
+  agentTeam: Object.freeze({
+    getConfig() { return ipcRenderer.invoke('agent-team:config:get'); },
+    saveConfig(value) { return ipcRenderer.invoke('agent-team:config:set', value); },
+    models(provider, baseUrl) { return ipcRenderer.invoke('agent-team:models', provider, baseUrl); },
+    templates() { return ipcRenderer.invoke('agent-team:templates:list'); },
+    saveTemplate(name) { return ipcRenderer.invoke('agent-team:templates:save', String(name || '')); },
+    loadTemplate(name) { return ipcRenderer.invoke('agent-team:templates:load', String(name || '')); },
+    run(message, to) { return ipcRenderer.invoke('agent-team:run', { message: String(message || ''), to: String(to || 'team') }); },
+    pause() { return ipcRenderer.invoke('agent-team:pause'); },
+    resume() { return ipcRenderer.invoke('agent-team:resume'); },
+    stop() { return ipcRenderer.invoke('agent-team:stop'); },
+    status() { return ipcRenderer.invoke('agent-team:status'); }
+  }),
+  agentEvents: Object.freeze({
+    append(payload) { return ipcRenderer.invoke('agent-events:append', payload); },
+    list(options) { return ipcRenderer.invoke('agent-events:list', options || {}); },
+    onUpdate(callback) { return subscribe('agent-events:update', callback); }
+  }),
   tools: Object.freeze({
     register(definitions) { return ipcRenderer.invoke('tools:register', definitions); },
     validate(name, args) { return ipcRenderer.invoke('tools:validate', { name: String(name || ''), args }); },
