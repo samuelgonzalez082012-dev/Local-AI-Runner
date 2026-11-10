@@ -1,9 +1,9 @@
 'use strict';
 const DEFAULT_TEAM = {
-  planner: { name: 'Planner', provider: 'openrouter', model: '' },
-  'developer-1': { name: 'Developer 1', provider: 'openrouter', model: '' },
-  'developer-2': { name: 'Developer 2', provider: 'ollama', model: 'qwen2.5-coder:7b' },
-  reviewer: { name: 'Reviewer', provider: 'openrouter', model: '' }
+  planner: { name: 'Planner', provider: 'openrouter', model: '', instructions: 'Coordinates priorities and is the only agent allowed to assign tasks.' },
+  'developer-1': { name: 'Developer 1', provider: 'openrouter', model: '', instructions: 'Implements assigned code changes and reports progress to Planner.' },
+  'developer-2': { name: 'Developer 2', provider: 'ollama', model: 'qwen2.5-coder:7b', instructions: 'Handles assigned implementation and testing tasks.' },
+  reviewer: { name: 'Reviewer', provider: 'openrouter', model: '', instructions: 'Reviews completed work and reports findings to Planner.' }
 };
 const MAX_CONTEXT = 120000;
 function safeText(value, limit = 4000) { return String(value ?? '').slice(0, limit); }
@@ -22,7 +22,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       const saved = JSON.parse(await fs.readFile(configPath, 'utf8'));
       for (const id of Object.keys(DEFAULT_TEAM)) if (saved[id]) {
         const v = saved[id];
-        config[id] = { name: safeText(v.name || DEFAULT_TEAM[id].name, 50), provider: v.provider === 'ollama' ? 'ollama' : 'openrouter', model: safeText(v.model, 200), baseUrl: safeText(v.baseUrl || 'http://127.0.0.1:11434', 300) };
+        config[id] = { name: safeText(v.name || DEFAULT_TEAM[id].name, 50), provider: v.provider === 'ollama' ? 'ollama' : 'openrouter', model: safeText(v.model, 200), instructions: safeText(v.instructions || DEFAULT_TEAM[id].instructions, 2000), baseUrl: safeText(v.baseUrl || 'http://127.0.0.1:11434', 300) };
       }
     } catch (e) { if (e.code !== 'ENOENT') throw e; }
   }
@@ -36,7 +36,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
         if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1'].includes(url.hostname)) throw new Error('Ollama must use a localhost HTTP endpoint.');
         baseUrl = url.origin;
       }
-      out[id] = { name: safeText(v.name || DEFAULT_TEAM[id].name, 50), provider, model: safeText(v.model, 200), baseUrl };
+      out[id] = { name: safeText(v.name || DEFAULT_TEAM[id].name, 50), provider, model: safeText(v.model, 200), instructions: safeText(v.instructions || DEFAULT_TEAM[id].instructions, 2000), baseUrl };
     }
     config = out;
     await fs.mkdir(userData, { recursive: true });
@@ -110,7 +110,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       const workspaceInfo = await workspace.getInfo();
       const files = workspaceInfo ? await workspace.list('') : [];
       const plannerPrompt = [
-        'You are the Planner for a software agent team. You are the ONLY role that may create or assign tasks. Developers may only execute their assigned task, report progress, or request clarification. Never claim a tool was used.',
+        'You are the Planner for a software agent team. You are the ONLY role that may create or assign tasks. Developers may only execute their assigned task, report progress, or request clarification. Never claim a tool was used. Role instructions: ' + config.planner.instructions,
         'Return ONLY valid JSON: {"plan":"short decision summary","assignments":[{"agentId":"developer-1|developer-2","task":"specific task"}],"needsUserInput":""}. Maximum 4 assignments. Assign only developers. The Reviewer is invoked separately after developers propose changes. Do not include chain-of-thought.',
         'User instruction: ' + prompt,
         'Requested recipient: ' + recipient + '. If a developer is named, assign the task to that developer if appropriate. Planner remains the only role that can assign work. If Reviewer is named, ask Reviewer for an analysis after planning; do not let Reviewer assign tasks.',
@@ -133,7 +133,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
         if (active?.cancelled) throw new Error('Team run stopped.');
         await record('task-started', task.agentId, safeText(task.task, 500), '', runId);
         const answer = await callAgent(task.agentId, [
-          { role: 'system', content: 'You are ' + config[task.agentId].name + '. Complete only the Planner-assigned task. You may not delegate or change task ownership. Return ONLY JSON: {"summary":"...","findings":["..."],"files":[{"path":"relative/path","mode":"create|update","content":"complete file contents"}],"questions":[]}. Do not include private chain-of-thought. Do not make up file contents; if unable to complete, return no files and explain why. Never propose absolute paths, traversal, secrets, binaries, or files over 1 MB.' },
+          { role: 'system', content: 'You are ' + config[task.agentId].name + '. Role instructions: ' + config[task.agentId].instructions + '. Complete only the Planner-assigned task. You may not delegate or change task ownership. Return ONLY JSON: {"summary":"...","findings":["..."],"files":[{"path":"relative/path","mode":"create|update","content":"complete file contents"}],"questions":[]}. Do not include private chain-of-thought. Do not make up file contents; if unable to complete, return no files and explain why. Never propose absolute paths, traversal, secrets, binaries, or files over 1 MB.' },
           { role: 'user', content: 'Assigned task: ' + task.task + '\nUser objective: ' + prompt + '\nAvailable project context: ' + JSON.stringify(contextFiles).slice(0, MAX_CONTEXT) }
         ], { maxTokens: 6000 });
         let result;
@@ -150,7 +150,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       if (active?.cancelled) throw new Error('Team run stopped.');
       if (proposals.length || recipient === 'reviewer') {
         const reviewText = await callAgent('reviewer', [
-          { role: 'system', content: 'You are the Reviewer. Review proposed changes only. Do not edit files or delegate. Return JSON {"summary":"...","issues":["..."],"approvedPaths":["..."]}. Assess correctness, safety, consistency, and test coverage. No chain-of-thought.' },
+          { role: 'system', content: 'You are the Reviewer. Role instructions: ' + config.reviewer.instructions + '. Review proposed changes only. Do not edit files or delegate. Return JSON {"summary":"...","issues":["..."],"approvedPaths":["..."]}. Assess correctness, safety, consistency, and test coverage. No chain-of-thought.' },
           { role: 'user', content: JSON.stringify({ objective: prompt, workspaceFiles: contextFiles, proposals: proposals.map(p => ({ path: p.path, mode: p.mode, content: p.content.slice(0, 30000) })) }).slice(0, MAX_CONTEXT) }
         ], { maxTokens: 2200 });
         let review;
