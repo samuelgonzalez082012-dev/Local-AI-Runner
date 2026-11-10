@@ -518,6 +518,9 @@ async function configureWorkspaceRedesign() {
   handle('agent-team:config:get', () => orchestrator.getConfig());
   handle('agent-team:config:set', value => orchestrator.saveConfig(value));
   handle('agent-team:models', (provider, baseUrl) => orchestrator.listModels(provider, baseUrl));
+  handle('agent-team:templates:list', () => orchestrator.listTemplates());
+  handle('agent-team:templates:save', name => orchestrator.saveTemplate(name));
+  handle('agent-team:templates:load', name => orchestrator.loadTemplate(name));
   handle('agent-team:run', value => orchestrator.run(value));
   handle('agent-team:stop', () => ({ stopped: orchestrator.stop() }));
   handle('agent-team:status', () => ({ running: orchestrator.isRunning() }));
