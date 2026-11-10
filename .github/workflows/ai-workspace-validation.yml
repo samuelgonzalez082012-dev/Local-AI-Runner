@@ -18,3 +18,5 @@ jobs:
       - run: npm test
       - name: Electron workspace smoke test
         run: npm run smoke:workspace
+      - name: Electron browser service smoke test
+        run: npm run smoke:browser
