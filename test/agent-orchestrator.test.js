@@ -57,7 +57,7 @@ test('Ollama model discovery rejects remote hosts', async t => {
 });
 
 test('Team configuration persists independent provider and model choices', async t => {
-  const { service } = await fixture(t, async () => ({ choices: [] }));
+  const { service, userData } = await fixture(t, async () => ({ choices: [] }));
   await service.saveConfig({
     planner: { provider: 'openrouter', model: 'planner-a' },
     'developer-1': { provider: 'ollama', model: 'qwen-coder', baseUrl: 'http://127.0.0.1:11434' },
