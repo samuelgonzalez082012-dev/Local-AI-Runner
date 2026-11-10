@@ -49,14 +49,14 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
     const agent = config[id] || config.planner;
     if (!agent.model) throw new Error('Choose a model for ' + agent.name + ' in Team settings.');
     if (agent.provider === 'openrouter') {
-      const result = await openRouter.chat({ model: agent.model, messages, temperature: 0.2, max_tokens: options.maxTokens || 4000 });
+      const result = await openRouter.chat({ model: agent.model, messages, temperature: 0.2, max_tokens: options.maxTokens || 4000, signal: active?.controller?.signal });
       return result.choices?.[0]?.message?.content || '';
     }
     const url = new URL(agent.baseUrl || 'http://127.0.0.1:11434');
     if (!['127.0.0.1','localhost','::1'].includes(url.hostname) || url.protocol !== 'http:') throw new Error('Ollama endpoint must remain on localhost.');
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 120000);
     try {
-      const response = await fetch(url.origin + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: agent.model, messages, stream: false, options: { temperature: 0.2 } }), signal: controller.signal, redirect: 'error' });
+      const response = await fetch(url.origin + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: agent.model, messages, stream: false, options: { temperature: 0.2 } }), signal: active?.controller?.signal || controller.signal, redirect: 'error' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Ollama request failed (' + response.status + ').');
       return data.message?.content || '';
@@ -70,7 +70,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
     if (active) throw new Error('A team run is already active. Stop it before starting another.');
     const prompt = safeText(instruction?.message, 8000).trim();
     if (!prompt) throw new Error('Enter an instruction for the team.');
-    active = { id: Date.now().toString(36), cancelled: false };
+    active = { id: Date.now().toString(36), cancelled: false, controller: new AbortController() };
     const runId = active.id;
     const proposals = [];
     try {
@@ -131,6 +131,6 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       throw error;
     } finally { active = null; }
   }
-  return { load, getConfig: () => structuredClone(config), saveConfig: save, listModels, run, stop: () => { if (active) active.cancelled = true; return !!active; }, isRunning: () => !!active };
+  return { load, getConfig: () => structuredClone(config), saveConfig: save, listModels, run, stop: () => { if (active) { active.cancelled = true; active.controller.abort(); } return !!active; }, isRunning: () => !!active };
 }
 module.exports = { createAgentOrchestrator, DEFAULT_TEAM };
