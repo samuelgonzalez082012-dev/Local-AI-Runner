@@ -13,7 +13,7 @@ function parseJson(text) {
   if (start < 0 || end <= start) throw new Error('Agent response did not contain the required JSON result.');
   return JSON.parse(raw.slice(start, end + 1));
 }
-function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, emit }) {
+function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, emit, getRecentEvents = async () => [] }) {
   const configPath = path.join(userData, 'agent-team-config.json');
   const templatesPath = path.join(userData, 'agent-team-templates.json');
   let config = structuredClone(DEFAULT_TEAM), active = null;
@@ -109,13 +109,15 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       await record('run-started', 'planner', 'Planner started a team run', prompt, runId);
       const workspaceInfo = await workspace.getInfo();
       const files = workspaceInfo ? await workspace.list('') : [];
+      const projectMemory = await getRecentEvents();
       const plannerPrompt = [
         'You are the Planner for a software agent team. You are the ONLY role that may create or assign tasks. Developers may only execute their assigned task, report progress, or request clarification. Never claim a tool was used. Role instructions: ' + config.planner.instructions,
         'Return ONLY valid JSON: {"plan":"short decision summary","assignments":[{"agentId":"developer-1|developer-2","task":"specific task"}],"needsUserInput":""}. Maximum 4 assignments. Assign only developers. The Reviewer is invoked separately after developers propose changes. Do not include chain-of-thought.',
         'User instruction: ' + prompt,
         'Requested recipient: ' + recipient + '. If a developer is named, assign the task to that developer if appropriate. Planner remains the only role that can assign work. If Reviewer is named, ask Reviewer for an analysis after planning; do not let Reviewer assign tasks.',
         'Workspace: ' + JSON.stringify(workspaceInfo),
-        'Workspace files: ' + JSON.stringify(files.slice(0, 100))
+        'Workspace files: ' + JSON.stringify(files.slice(0, 100)),
+        'Recent project activity memory: ' + JSON.stringify(projectMemory.slice(-40))
       ].join('\n\n');
       const planText = await callAgent('planner', [{ role: 'system', content: 'Return concise task plans as JSON only.' }, { role: 'user', content: plannerPrompt }], { maxTokens: 1800 });
       let plan;
