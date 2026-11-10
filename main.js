@@ -366,8 +366,7 @@ function configureWorkspace() {
       '',
       'Content preview:',
       preview.preview || '(Empty file)'
-    ].join('
-');
+    ].join('\\n');
     const answer=await dialog.showMessageBox(mainWindow,{
       type:'question',buttons:['Create file','Cancel'],cancelId:1,defaultId:1,
       title:'Approve generated file?',message:`Create ${relativePath}?`,detail
