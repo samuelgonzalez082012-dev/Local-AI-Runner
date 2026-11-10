@@ -98,12 +98,16 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
   async function record(type, agentId, summary, detail = '', taskId = '') {
     return emit({ type, agentId, taskId, summary: safeText(summary, 500), detail: safeText(detail, 2000) });
   }
+  async function waitIfPaused() {
+    while (active?.paused && !active.cancelled) await new Promise(resolve => active.resumeWaiters.push(resolve));
+    if (active?.cancelled) throw new Error('Team run stopped.');
+  }
   async function run(instruction) {
     if (active) throw new Error('A team run is already active. Stop it before starting another.');
     const prompt = safeText(instruction?.message, 8000).trim();
     const recipient = ['planner', 'developer-1', 'developer-2', 'reviewer'].includes(instruction?.to) ? instruction.to : 'team';
     if (!prompt) throw new Error('Enter an instruction for the team.');
-    active = { id: Date.now().toString(36), cancelled: false, controller: new AbortController() };
+    active = { id: Date.now().toString(36), cancelled: false, paused: false, resumeWaiters: [], controller: new AbortController() };
     const runId = active.id, proposals = [];
     try {
       await record('run-started', 'planner', 'Planner started a team run', prompt, runId);
@@ -133,7 +137,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
         try { contextFiles.push({ path: f.path, content: safeText(await workspace.read(f.path), 7000) }); } catch {}
       }
       for (const task of assignments) {
-        if (active?.cancelled) throw new Error('Team run stopped.');
+        await waitIfPaused();
         await record('task-started', task.agentId, safeText(task.task, 500), '', runId);
         const answer = await callAgent(task.agentId, [
           { role: 'system', content: 'You are ' + config[task.agentId].name + '. Role instructions: ' + config[task.agentId].instructions + '. Complete only the Planner-assigned task. You may not delegate or change task ownership. Return ONLY JSON: {"summary":"...","findings":["..."],"files":[{"path":"relative/path","mode":"create|update","content":"complete file contents"}],"questions":[]}. Do not include private chain-of-thought. Do not make up file contents; if unable to complete, return no files and explain why. Never propose absolute paths, traversal, secrets, binaries, or files over 1 MB.' },
@@ -152,7 +156,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
         await record('agent-message', task.agentId, 'Agent report shared with Planner and subsequent agents', JSON.stringify(agentReports[agentReports.length - 1]), runId);
         await record('task-completed', task.agentId, safeText(result.summary || 'Task completed', 500), JSON.stringify({ findings: result.findings || [], questions: result.questions || [], proposedFiles: (result.files || []).length }), runId);
       }
-      if (active?.cancelled) throw new Error('Team run stopped.');
+      await waitIfPaused();
       if (proposals.length || recipient === 'reviewer') {
         const reviewText = await callAgent('reviewer', [
           { role: 'system', content: 'You are the Reviewer. Role instructions: ' + config.reviewer.instructions + '. Review proposed changes only. Do not edit files or delegate. Return JSON {"summary":"...","issues":["..."],"approvedPaths":["..."]}. Assess correctness, safety, consistency, and test coverage. No chain-of-thought.' },
@@ -172,7 +176,9 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
   }
   return {
     load, getConfig: () => structuredClone(config), saveConfig: save, listModels, listTemplates, saveTemplate, loadTemplate, run,
-    stop: () => { if (active) { active.cancelled = true; active.controller.abort(); } return !!active; },
+    pause: () => { if (!active || active.cancelled) return false; active.paused = true; return true; },
+    resume: () => { if (!active || active.cancelled) return false; active.paused = false; active.resumeWaiters.splice(0).forEach(resolve => resolve()); return true; },
+    stop: () => { if (active) { active.cancelled = true; active.controller.abort(); active.resumeWaiters.splice(0).forEach(resolve => resolve()); } return !!active; },
     isRunning: () => !!active
   };
 }
