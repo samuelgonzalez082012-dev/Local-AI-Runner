@@ -66,7 +66,16 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
   async function event(type, agentId, summary, detail = '', taskId = '') {
     return emit({ type, agentId, taskId, summary: safeText(summary, 500), detail: safeText(detail, 2000) });
   }
-  async function listModels(provider = 'openrouter', baseUrl = 'http://127.0.0.1:11434') {\n    if (provider !== 'ollama') return (await openRouter.models()).map(m => ({ id: m.id, name: m.name || m.id }));\n    const url = new URL(baseUrl);\n    if (url.protocol !== 'http:' || !['127.0.0.1','localhost','::1'].includes(url.hostname)) throw new Error('Ollama model discovery is restricted to localhost.');\n    const response = await fetch(url.origin + '/api/tags', { redirect: 'error' });\n    const data = await response.json().catch(() => ({}));\n    if (!response.ok) throw new Error(data.error || 'Could not load Ollama models.');\n    return (data.models || []).map(m => ({ id: m.name, name: m.name }));\n  }\n  async function run(instruction) {
+  async function listModels(provider = 'openrouter', baseUrl = 'http://127.0.0.1:11434') {
+    if (provider !== 'ollama') return (await openRouter.models()).map(m => ({ id: m.id, name: m.name || m.id }));
+    const url = new URL(baseUrl);
+    if (url.protocol !== 'http:' || !['127.0.0.1','localhost','::1'].includes(url.hostname)) throw new Error('Ollama model discovery is restricted to localhost.');
+    const response = await fetch(url.origin + '/api/tags', { redirect: 'error' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Could not load Ollama models.');
+    return (data.models || []).map(m => ({ id: m.name, name: m.name }));
+  }
+  async function run(instruction) {
     if (active) throw new Error('A team run is already active. Stop it before starting another.');
     const prompt = safeText(instruction?.message, 8000).trim();
     if (!prompt) throw new Error('Enter an instruction for the team.');
@@ -83,7 +92,9 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
         'User instruction: ' + prompt,
         'Workspace: ' + JSON.stringify(listing),
         'Workspace files: ' + JSON.stringify(files.slice(0, 100))
-      ].join('\n\n');
+      ].join('
+
+');
       const planText = await callAgent('planner', [{ role: 'system', content: 'Return concise task plans as JSON only.' }, { role: 'user', content: plannerPrompt }], { maxTokens: 1800 });
       let plan;
       try { plan = parseJson(planText); } catch { plan = { plan: planText.slice(0, 1200), assignments: [{ agentId: 'developer-1', task: prompt }] }; }
@@ -101,7 +112,9 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
         await event('task-started', task.agentId, safeText(task.task, 500), '', runId);
         const answer = await callAgent(task.agentId, [
           { role: 'system', content: 'You are ' + config[task.agentId].name + '. Complete only the Planner-assigned task. You may not delegate or change task ownership. Return ONLY JSON: {"summary":"...","findings":["..."],"files":[{"path":"relative/path","mode":"create|update","content":"complete file contents"}],"questions":[]}. Do not include private chain-of-thought. Do not make up file contents; if unable to complete, return no files and explain why. Never propose absolute paths, traversal, secrets, binaries, or files over 1 MB.' },
-          { role: 'user', content: 'Assigned task: ' + task.task + '\nUser objective: ' + prompt + '\nAvailable project context: ' + JSON.stringify(contextFiles).slice(0, MAX_CONTEXT) }
+          { role: 'user', content: 'Assigned task: ' + task.task + '
+User objective: ' + prompt + '
+Available project context: ' + JSON.stringify(contextFiles).slice(0, MAX_CONTEXT) }
         ], { maxTokens: 6000 });
         let result;
         try { result = parseJson(answer); } catch { result = { summary: answer.slice(0, 1800), findings: [], files: [], questions: [] }; }
