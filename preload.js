@@ -54,6 +54,13 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     models() { return ipcRenderer.invoke('openrouter:models'); },
     chat(payload) { return ipcRenderer.invoke('openrouter:chat', payload); }
   }),
+  agentTeam: Object.freeze({
+    getConfig() { return ipcRenderer.invoke('agent-team:config:get'); },
+    saveConfig(value) { return ipcRenderer.invoke('agent-team:config:set', value); },
+    run(message) { return ipcRenderer.invoke('agent-team:run', { message: String(message || '') }); },
+    stop() { return ipcRenderer.invoke('agent-team:stop'); },
+    status() { return ipcRenderer.invoke('agent-team:status'); }
+  }),
   agentEvents: Object.freeze({
     append(payload) { return ipcRenderer.invoke('agent-events:append', payload); },
     list(options) { return ipcRenderer.invoke('agent-events:list', options || {}); },
