@@ -14,7 +14,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: node --check main.js && node --check preload.js && node --check workspace-layout.js && node --check workspace-openrouter-ui.js && node --check services/openrouter-service.js && node --check services/agent-event-store.js && node --check services/agent-orchestrator.js && node --check scripts/workspace-smoke.js
+      - run: node --check main.js && node --check preload.js && node --check renderer.js && node --check workspace-layout.js && node --check workspace-openrouter-ui.js && node --check services/openrouter-service.js && node --check services/agent-event-store.js && node --check services/agent-orchestrator.js && node --check scripts/workspace-smoke.js
       - run: npm test
       - name: Electron workspace smoke test
         run: npm run smoke:workspace
