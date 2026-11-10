@@ -8,8 +8,13 @@ const {app,BrowserWindow}=require('electron');
  const win=new BrowserWindow({width:1400,height:950,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false}});
  try{
   await win.loadFile(path.join(__dirname,'workspace-smoke.html'));
-  const ready=await win.webContents.executeJavaScript("new Promise(resolve=>{const start=Date.now();const tick=()=>{if(document.querySelector('#workspace-redesign-root'))resolve(true);else if(Date.now()-start>7000)resolve(false);else setTimeout(tick,50);};tick();})");
-  check('workspace shell mounts in Electron',ready);
+  const ready=await win.webContents.executeJavaScript("new Promise(resolve=>{const start=Date.now();const tick=()=>{if(typeof window.LocalAIWorkspaceEnter==='function')resolve(true);else if(Date.now()-start>7000)resolve(false);else setTimeout(tick,50);};tick();})");
+  check('standalone app loads without entering workspace mode',ready);
+  const standalone=await win.webContents.executeJavaScript("({root:!!document.querySelector('#workspace-redesign-root'),chatParent:document.querySelector('#chatView')?.parentElement?.id,chatVisible:getComputedStyle(document.querySelector('#chatView')).display!=='none'})");
+  check('Chat remains a normal standalone surface by default',!standalone.root&&standalone.chatParent==='workspaceViews'&&standalone.chatVisible,JSON.stringify(standalone));
+  await win.webContents.executeJavaScript("document.querySelector('#enterAiWorkspace').click()");
+  const entered=await win.webContents.executeJavaScript("new Promise(resolve=>{const start=Date.now();const tick=()=>{const root=document.querySelector('#workspace-redesign-root');if(root&&!root.hidden&&document.querySelector('.wr-agent-node'))resolve(true);else if(Date.now()-start>7000)resolve(false);else setTimeout(tick,50);};tick();})");
+  check('dedicated entry opens the integrated workspace',entered);
   const initial=await win.webContents.executeJavaScript("({tabs:[...document.querySelectorAll('.wr-global-tabs .wr-tab')].map(x=>x.dataset.tab),active:document.querySelector('.wr-panel-content')?.dataset.surface,nodes:document.querySelectorAll('.wr-agent-node').length,provider:!!document.querySelector('.wr-provider-drawer')})");
   check('all app surfaces are exposed as tabs',initial.tabs.includes('chat')&&initial.tabs.includes('agent-team')&&initial.tabs.includes('editor')&&initial.tabs.includes('browser')&&initial.tabs.includes('files')&&initial.tabs.includes('activity'),JSON.stringify(initial.tabs));
   check('Agent Control Center and OpenRouter settings mount',initial.active==='agent-team'&&initial.nodes===4&&initial.provider,JSON.stringify(initial));
@@ -42,6 +47,9 @@ const {app,BrowserWindow}=require('electron');
   await win.webContents.executeJavaScript("window.__workspacePath='/workspace/other';document.querySelector('[data-tab=chat]').click()");
   const projectLayout=await win.webContents.executeJavaScript("new Promise(resolve=>{const start=Date.now();const tick=()=>{const key=Object.keys(localStorage).find(k=>k.endsWith('/workspace/other'));if(key)resolve({key,active:window.LocalAIWorkspaceLayout.get().groups.some(g=>g.tabs.includes('chat'))});else if(Date.now()-start>3000)resolve({key:'',active:false});else setTimeout(tick,30);};tick();})");
   check('layout state switches to the selected project',!!projectLayout.key&&projectLayout.active,JSON.stringify(projectLayout));
+  await win.webContents.executeJavaScript("document.querySelector('#standalone-browser').click()");
+  const standaloneReturn=await win.webContents.executeJavaScript("({rootHidden:document.querySelector('#workspace-redesign-root').hidden,mode:document.querySelector('#mainWorkspace').classList.contains('workspace-mode'),browserParent:document.querySelector('#browserView').parentElement.id,browserActive:document.querySelector('#browserView').classList.contains('active'),viewsVisible:getComputedStyle(document.querySelector('#workspaceViews')).display!=='none'})");
+  check('standalone Browser navigation exits workspace and restores native views',standaloneReturn.rootHidden&&!standaloneReturn.mode&&standaloneReturn.browserParent==='workspaceViews'&&standaloneReturn.browserActive&&standaloneReturn.viewsVisible,JSON.stringify(standaloneReturn));
  }catch(error){console.error(error);check('Electron workspace smoke run',false,error.message);}
  finally{await win.destroy();const failed=checks.filter(x=>!x.ok);console.log('WORKSPACE SMOKE: '+(checks.length-failed.length)+'/'+checks.length+' passed');app.exit(failed.length?1:0);}
 })().catch(error=>{console.error(error);app.exit(2);});
