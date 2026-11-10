@@ -413,9 +413,14 @@ function configureWorkspace() {
     assertTrustedRenderer(event);
     const backup=(await workspace.backups()).find(entry=>entry.id===String(id));
     if(!backup)throw new Error('Backup not found.');
-    const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Restore backup','Cancel'],cancelId:1,defaultId:1,title:'Restore previous file version?',message:`Restore ${backup.relativePath}?`,detail:'The current version will first be backed up, so you can recover it afterward.'});
-    if(answer.response!==0)throw new Error('Backup restore cancelled.');
-    return workspace.restoreBackup(String(id));
+    return withWorkspaceFileLock(backup.relativePath, async () => {
+      const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Restore backup','Cancel'],cancelId:1,defaultId:1,title:'Restore previous file version?',message:`Restore ${backup.relativePath}?`,detail:'The current version will first be backed up, so you can recover it afterward.'});
+      if(answer.response!==0)throw new Error('Backup restore cancelled.');
+      const saved = await workspace.restoreBackup(String(id));
+      const activity = await agentEvents.append({ type:'file-restored', agentId:'user', summary:'User restored a file backup', file:backup.relativePath });
+      mainWindow?.webContents.send('agent-events:update', activity);
+      return saved;
+    });
   });
 }
 function configureToolRegistry() {
