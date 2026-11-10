@@ -6,9 +6,9 @@
 </main>
 <script>
 const config={planner:{name:'Planner',provider:'openrouter',model:'test/planner',instructions:'Coordinate.'},'developer-1':{name:'Developer 1',provider:'openrouter',model:'test/dev1',instructions:'Build.'},'developer-2':{name:'Developer 2',provider:'ollama',model:'qwen-coder',instructions:'Test.'},reviewer:{name:'Reviewer',provider:'openrouter',model:'test/reviewer',instructions:'Review.'}};
-window.__smokeCalls=[];
+window.__smokeCalls=[];window.__workspacePath='/workspace/smoke';
 window.localAI={
- workspace:{info:async()=>({path:'/workspace/smoke',name:'smoke'}),list:async()=>[],read:async()=>'',create:async path=>({path}),write:async path=>({path})},
+ workspace:{info:async()=>({path:window.__workspacePath,name:'smoke'}),list:async()=>[],read:async()=>'',create:async path=>({path}),write:async path=>({path})},
  agentTeam:{getConfig:async()=>structuredClone(config),saveConfig:async value=>{Object.assign(config,value);return structuredClone(config);},models:async provider=>[{id:provider==='ollama'?'qwen-coder':'test/model',name:'Smoke model'}],templates:async()=>['Smoke template'],saveTemplate:async()=>['Smoke template'],loadTemplate:async()=>structuredClone(config),run:async(message,to)=>{window.__smokeCalls.push({message,to});return {plan:'Smoke plan completed',needsUserInput:'',assignments:[{agentId:'developer-1',task:message}],proposals:[]};},pause:async()=>({paused:true}),resume:async()=>({resumed:true}),stop:async()=>({stopped:true}),status:async()=>({running:false})},
  agentEvents:{list:async()=>[{id:'e1',at:new Date().toISOString(),type:'task-completed',agentId:'developer-1',summary:'Smoke task completed',detail:'Checked fixture'}],append:async event=>event,onUpdate:()=>()=>{}},
  openRouter:{status:async()=>({connected:false}),models:async()=>[],setKey:async()=>({connected:true})}
