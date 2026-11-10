@@ -492,7 +492,7 @@ function configureWorkspaceRedesign() {
   });
   handle('agent-events:list', options => agentEvents.list(options || {}));
   handle('agent-team:config:get', () => orchestrator.getConfig());
-  handle('agent-team:config:set', value => orchestrator.saveConfig(value));
+  handle('agent-team:config:set', value => orchestrator.saveConfig(value));\n  handle('agent-team:models', (provider, baseUrl) => orchestrator.listModels(provider, baseUrl));
   handle('agent-team:run', value => orchestrator.run(value));
   handle('agent-team:stop', () => ({ stopped: orchestrator.stop() }));
   handle('agent-team:status', () => ({ running: orchestrator.isRunning() }));
