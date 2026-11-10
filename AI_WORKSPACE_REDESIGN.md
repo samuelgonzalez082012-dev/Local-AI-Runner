@@ -36,7 +36,7 @@ Automated checks run on each push to this branch:
 - JavaScript syntax checks for the Electron main/preload, workspace and agent services.
 - npm test, including agent orchestration, provider isolation, team-template persistence, event persistence and project filtering.
 
-The full Electron application has not been interactively smoke-tested in this environment. The remaining release gate is to run the app on the target desktop, connect OpenRouter and/or Ollama, exercise split-pane mounting for Chat/Editor/Browser, run a delegated task, approve a proposed file change, and verify pause/stop/redirect and layout persistence.
+Both headless Electron smoke suites pass in CI. The full packaged application has not yet been interactively exercised on the target desktop. The remaining release gate is to launch the app on the target desktop, connect OpenRouter and/or Ollama, verify the real Chat/Editor/Browser view adapters, run a delegated task against a real workspace, approve a proposed file change, and verify pause/stop/redirect and layout persistence.
 
 ## Deliberate boundaries
 
