@@ -20,7 +20,7 @@ async function fixture(t, chat) {
     emit: async event => { events.push(event); return event; }
   });
   await service.load();
-  return { service, events };
+  return { service, events, userData };
 }
 
 test('Planner assigns developer work and Reviewer inspects proposals without writing files', async t => {
@@ -65,10 +65,13 @@ test('Team configuration persists independent provider and model choices', async
     reviewer: { provider: 'openrouter', model: 'review-c' }
   });
   const reloaded = createAgentOrchestrator({
-    fs, path, userData: service.__unused || path.join(os.tmpdir(), 'unused'),
+    fs, path, userData,
     openRouter: { chat: async () => ({}), models: async () => [] },
     workspace: {}, emit: async e => e
   });
+  await reloaded.load();
   assert.equal(service.getConfig()['developer-1'].provider, 'ollama');
   assert.equal(service.getConfig()['developer-1'].model, 'qwen-coder');
+  assert.equal(reloaded.getConfig()['developer-1'].provider, 'ollama');
+  assert.equal(reloaded.getConfig().planner.model, 'planner-a');
 });
