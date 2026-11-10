@@ -384,8 +384,7 @@ function configureWorkspace() {
       '',
       'Change preview:',
       preview.diff || '(No textual differences detected.)'
-    ].join('
-');
+    ].join('\n');
     const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['Back up and write','Cancel'],cancelId:1,defaultId:1,title:'Review file changes',message:`Approve changes to ${relativePath}?`,detail});
     if(answer.response!==0) throw new Error('File modification cancelled.');
     return workspace.write(relativePath,payload?.content);
