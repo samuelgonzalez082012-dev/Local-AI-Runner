@@ -127,6 +127,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
       if (!assignments.length && !plan.needsUserInput && recipient !== 'reviewer') assignments = [{ agentId: 'developer-1', task: prompt }];
       await record('plan-created', 'planner', safeText(plan.plan || 'Plan created', 500), JSON.stringify(assignments), runId);
       const contextFiles = [];
+      const agentReports = [];
       if (workspaceInfo) for (const f of files.filter(x => x.type === 'file').slice(0, 12)) {
         if (active?.cancelled) throw new Error('Team run stopped.');
         try { contextFiles.push({ path: f.path, content: safeText(await workspace.read(f.path), 7000) }); } catch {}
@@ -136,7 +137,7 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
         await record('task-started', task.agentId, safeText(task.task, 500), '', runId);
         const answer = await callAgent(task.agentId, [
           { role: 'system', content: 'You are ' + config[task.agentId].name + '. Role instructions: ' + config[task.agentId].instructions + '. Complete only the Planner-assigned task. You may not delegate or change task ownership. Return ONLY JSON: {"summary":"...","findings":["..."],"files":[{"path":"relative/path","mode":"create|update","content":"complete file contents"}],"questions":[]}. Do not include private chain-of-thought. Do not make up file contents; if unable to complete, return no files and explain why. Never propose absolute paths, traversal, secrets, binaries, or files over 1 MB.' },
-          { role: 'user', content: 'Assigned task: ' + task.task + '\nUser objective: ' + prompt + '\nAvailable project context: ' + JSON.stringify(contextFiles).slice(0, MAX_CONTEXT) }
+          { role: 'user', content: 'Assigned task: ' + task.task + '\nUser objective: ' + prompt + '\nShared project context and prior agent reports: ' + JSON.stringify({ files: contextFiles, agentReports }).slice(0, MAX_CONTEXT) }
         ], { maxTokens: 6000 });
         let result;
         try { result = parseJson(answer); } catch { result = { summary: answer.slice(0, 1800), findings: [], files: [], questions: [] }; }
@@ -147,13 +148,15 @@ function createAgentOrchestrator({ fs, path, userData, openRouter, workspace, em
           if (Buffer.byteLength(content, 'utf8') > 1000000) continue;
           proposals.push({ path: rel, mode: f.mode === 'create' ? 'create' : 'update', content, agentId: task.agentId, summary: safeText(result.summary, 500) });
         }
+        agentReports.push({ agentId: task.agentId, summary: safeText(result.summary, 1000), findings: (result.findings || []).slice(0, 20), questions: (result.questions || []).slice(0, 10), proposedPaths: proposals.filter(p => p.agentId === task.agentId).map(p => p.path) });
+        await record('agent-message', task.agentId, 'Agent report shared with Planner and subsequent agents', JSON.stringify(agentReports[agentReports.length - 1]), runId);
         await record('task-completed', task.agentId, safeText(result.summary || 'Task completed', 500), JSON.stringify({ findings: result.findings || [], questions: result.questions || [], proposedFiles: (result.files || []).length }), runId);
       }
       if (active?.cancelled) throw new Error('Team run stopped.');
       if (proposals.length || recipient === 'reviewer') {
         const reviewText = await callAgent('reviewer', [
           { role: 'system', content: 'You are the Reviewer. Role instructions: ' + config.reviewer.instructions + '. Review proposed changes only. Do not edit files or delegate. Return JSON {"summary":"...","issues":["..."],"approvedPaths":["..."]}. Assess correctness, safety, consistency, and test coverage. No chain-of-thought.' },
-          { role: 'user', content: JSON.stringify({ objective: prompt, workspaceFiles: contextFiles, proposals: proposals.map(p => ({ path: p.path, mode: p.mode, content: p.content.slice(0, 30000) })) }).slice(0, MAX_CONTEXT) }
+          { role: 'user', content: JSON.stringify({ objective: prompt, workspaceFiles: contextFiles, agentReports, proposals: proposals.map(p => ({ path: p.path, mode: p.mode, content: p.content.slice(0, 30000) })) }).slice(0, MAX_CONTEXT) }
         ], { maxTokens: 2200 });
         let review;
         try { review = parseJson(reviewText); } catch { review = { summary: reviewText.slice(0, 1500), issues: [], approvedPaths: [] }; }
