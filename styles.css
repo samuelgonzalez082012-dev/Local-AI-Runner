@@ -764,3 +764,14 @@ body.dock-resizing * {
 #settingsbar.inspector-workspace .inspector-tabs { width:min(var(--message-width),100%); margin:0 auto; padding:8px 0 0; }
 #settingsbar.inspector-workspace .inspector-content { width:min(var(--message-width),100%); margin:0 auto; flex:1; overflow:visible; padding:16px 0 0; }
 #settingsbar.inspector-workspace .tabpanel.active { display:block; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--panel); }
+
+/* AI Workspace parent navigation and its internal Conversation / Inspector tabs. */
+.ai-workspace-tabs { flex:0 0 auto; display:flex; align-items:center; gap:6px; width:min(var(--message-width),calc(100% - 36px)); margin:0 auto; padding:12px 0 0; border-bottom:1px solid var(--border); }
+.ai-workspace-tab { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:38px; padding:0 13px; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); font:inherit; font-size:11px; font-weight:600; cursor:pointer; transition:color .15s ease,border-color .15s ease,background .15s ease; }
+.ai-workspace-tab:hover { color:var(--text); background:color-mix(in srgb,var(--panel) 70%,transparent); }
+.ai-workspace-tab.active { color:var(--text); border-bottom-color:var(--accent); }
+.ai-workspace-tab:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:5px; }
+.ai-workspace-tab .tab-icon { font-size:13px; opacity:.85; }
+#chatView .chat-column { min-height:0; }
+#settingsbar.inspector-workspace .inspector-head { margin-top:12px; }
+@media (max-width:760px) { .ai-workspace-tabs { width:calc(100% - 28px); } .ai-workspace-tab { flex:1; } }

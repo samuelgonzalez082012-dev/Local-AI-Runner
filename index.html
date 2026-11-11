@@ -27,8 +27,7 @@
       <button class="new-chat-btn" id="newChat"><span class="new-chat-icon">＋</span><span id="newChatLabel">New chat</span><kbd>Ctrl N</kbd></button>
       <div class="nav-section-label">WORKSPACE</div>
       <nav id="primaryNav" class="primary-nav" aria-label="Workspace sections">
-        <button class="nav-item active" data-view="chat"><span class="nav-icon">◫</span><span>Conversation</span><span id="chatCount" class="nav-count"></span></button>
-        <button class="nav-item" data-view="inspector"><span class="nav-icon">☷</span><span>Inspector</span></button>
+        <button class="nav-item active" data-view="chat"><span class="nav-icon">◫</span><span>AI Workspace</span><span id="chatCount" class="nav-count"></span></button>
         <button class="nav-item" data-view="projects"><span class="nav-icon">▦</span><span>Projects</span></button>
         <button class="nav-item" data-view="editor" aria-label="Code editor"><span class="nav-icon">⌘</span><span>Code editor</span></button>
         <button class="nav-item" data-view="browser"><span class="nav-icon">◍</span><span>Browser</span></button>
@@ -63,6 +62,10 @@
 
       <div id="workspaceViews" class="workspace-views">
         <section id="chatView" class="workspace-view active" data-view="chat">
+          <nav class="ai-workspace-tabs" aria-label="AI Workspace sections">
+            <button class="ai-workspace-tab active" type="button" data-ai-workspace-tab data-view="chat"><span class="tab-icon">◫</span><span class="ai-tab-conversation">Conversation</span></button>
+            <button class="ai-workspace-tab" type="button" data-ai-workspace-tab data-view="inspector"><span class="tab-icon">☷</span><span class="ai-tab-inspector">Inspector</span></button>
+          </nav>
           <div class="chat-column">
           <div id="chatHeader" class="chat-header"><div><span class="subtle-label">CONVERSATION</span><h1 id="chatTitle">New chat</h1></div><div class="chat-header-actions"><button class="btn subtle" id="summarizeChat">Summarize</button><button class="btn subtle" id="exportChat">Export</button><button class="icon-btn" id="renameChat" title="Rename conversation">✎</button><button class="icon-btn" id="pinChat" title="Pin conversation">☆</button></div></div>
           <div id="assistantStatus" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div><section id="messages" class="message-scroll" aria-live="off" aria-label="Chat transcript">
@@ -117,6 +120,10 @@
 
         
     <section id="settingsbar" class="workspace-view inspector-workspace" data-view="inspector" aria-label="Inspector">
+      <nav class="ai-workspace-tabs" aria-label="AI Workspace sections">
+        <button class="ai-workspace-tab" type="button" data-ai-workspace-tab data-view="chat"><span class="tab-icon">◫</span><span class="ai-tab-conversation">Conversation</span></button>
+        <button class="ai-workspace-tab active" type="button" data-ai-workspace-tab data-view="inspector"><span class="tab-icon">☷</span><span class="ai-tab-inspector">Inspector</span></button>
+      </nav>
       <div class="inspector-head"><div><strong>Inspector</strong><small id="inspectorSubtitle">Model, conversation, context and tool controls</small></div><button id="closeSettings" class="btn subtle" aria-label="Return to conversation">← Conversation</button></div>
       <nav id="tabs" class="inspector-tabs"><button class="active" data-tab="model">Model</button><button data-tab="chat">Chat</button><button data-tab="context">Context</button><button data-tab="tools">Tools</button></nav>
       <div id="panels" class="inspector-content">
