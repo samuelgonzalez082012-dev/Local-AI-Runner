@@ -1639,7 +1639,24 @@
     return {};
   }
 
-  async function streamCompletion({ model, messages, tools, toolFallbackPrompt = '', signal, onDelta, maxTokensOverride }) {
+  async function streamCompletion({ model, messages, tools, toolFallbackPrompt = '', signal, onDelta, maxTokensOverride, providerOverride }) {
+    if(providerOverride==='openrouter') {
+      await ensureServerApproved('https://openrouter.ai/api/v1');
+      const openMessages=(messages||[]).map(message=>{
+        if(message.images?.length)throw new Error('OpenRouter image input is not enabled in this local-first build.');
+        const item={role:message.role,content:String(message.content||'')};
+        if(message.role==='assistant'&&Array.isArray(message.tool_calls))item.tool_calls=message.tool_calls.map(call=>({id:call.id||uid(),type:'function',function:{name:call.name,arguments:JSON.stringify(call.args||{})}}));
+        if(message.role==='tool')item.tool_call_id=String(message.tool_call_id||'');
+        return item;
+      });
+      if(toolFallbackPrompt)openMessages.unshift({role:'system',content:toolFallbackPrompt});
+      const response=await window.localAI.openRouter.chat({model,messages:openMessages,tools:tools||[],temperature:settings.temp,max_tokens:maxTokensOverride||settings.maxTokens||4096});
+      const choice=response.choices?.[0]?.message||{};
+      const content=typeof choice.content==='string'?choice.content:'';
+      const toolCalls=(choice.tool_calls||[]).map(call=>({id:call.id||uid(),name:call.function?.name||'',args:normalizeToolArguments(call.function?.arguments)}));
+      const reasoning=String(choice.reasoning||choice.reasoning_content||'');
+      return {content,thinking:reasoning,toolCalls,chunks:1,evalCount:Number(response.usage?.completion_tokens)||0,evalDuration:0,rawContent:content,reasoningField:reasoning};
+    }
     const hasTokenOverride=maxTokensOverride!==undefined&&maxTokensOverride!==null&&Number.isFinite(Number(maxTokensOverride));
     const tokenLimit=hasTokenOverride?Math.max(256,Math.min(16000,Number(maxTokensOverride))):settings.maxTokens;
     await ensureServerApproved();
