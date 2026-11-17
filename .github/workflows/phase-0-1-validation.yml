@@ -51,7 +51,7 @@ jobs:
             if (current) {
               await github.rest.checks.update({
                 owner: context.repo.owner, repo: context.repo.repo, check_run_id: current.id,
-                output: { title: 'Automated test output', summary: output.slice(-55000) || 'No test output was captured.' }
+                output: { title: 'Automated test output', summary: (output.slice(0, 18000) + '\\n\\n--- END OF TEST OUTPUT ---\\n\\n' + output.slice(-18000)) || 'No test output was captured.' }
               });
             }
             if (failed) core.setFailed('Automated tests failed. See this check run summary for the test output.');
