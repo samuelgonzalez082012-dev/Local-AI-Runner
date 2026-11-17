@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     setApiKey(value) { return ipcRenderer.invoke('credentials:set-api-key', value); }
   }),
   editor: Object.freeze({
+    askAI(prompt) { ipcRenderer.send('editor:ai-request', String(prompt || '')); return true; },
+    onAIRequest(callback) { return subscribe('editor:ai-request', callback); },
     openWindow() { return ipcRenderer.invoke('editor:open-window'); },
     getSync() { return ipcRenderer.invoke('editor:sync:get'); },
     setSync(value) { ipcRenderer.send('editor:sync:set', value); },
@@ -47,6 +49,12 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     getPreferences() { return ipcRenderer.invoke('editor:preferences:get'); },
     setPreferences(value) { return ipcRenderer.invoke('editor:preferences:set', value); },
     onPreferences(callback) { return subscribe('editor:preferences:update', callback); }
+  }),
+  openRouter: Object.freeze({
+    status() { return ipcRenderer.invoke('openrouter:status'); },
+    setKey(value) { return ipcRenderer.invoke('openrouter:key:set', String(value || '')); },
+    models() { return ipcRenderer.invoke('openrouter:models'); },
+    chat(payload) { return ipcRenderer.invoke('openrouter:chat', payload || {}); }
   }),
   work: Object.freeze({
     state() { return ipcRenderer.invoke('work:state'); },

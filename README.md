@@ -225,3 +225,16 @@ To run a team task:
 Agent file access is limited to the selected workspace and supported text/source files. File reads use shared locks; file writes use exclusive locks and a file-version check after the approval dialog. Agents can send task-scoped messages and propose project-memory entries. Memory proposals do not become shared instructions until approved.
 
 Work Manager panels can be hidden, reordered by dragging their headers and resized. Team templates preserve numbered versions. Agent model-name overrides use the currently configured app provider; separate simultaneous provider credentials per agent are not yet supported.
+
+
+## Optional OpenRouter provider
+
+Ollama remains the default local-first model provider and does not require an API key. Users may optionally configure OpenRouter at `https://openrouter.ai/api/v1` in Connections. An OpenRouter API key is stored through Electron's OS-backed secure storage when available. OpenRouter models are hosted by third parties and may incur usage charges; the app asks for remote-server approval before sending prompts. Work Manager agents can inherit the configured provider or use OpenRouter with an explicitly selected model.
+
+## Phase 0-1 implementation notes
+
+- Work Manager validates Planner workstream JSON, honors the selected task owner as the primary implementation owner, includes approved project memory only, and enforces agent write-proposal permission again in the Electron main process.
+- Team runs now expose Stop, abort sibling workers after a failure, and wait for all workers to settle before finalizing the task.
+- Teams can set bounded concurrency, per-agent step, time and output-token budgets.
+- The Models page can pull Ollama models with progress and cancellation. Hardware fit is shown as a rough system-RAM estimate; it does not predict GPU VRAM availability or guarantee that a model will run.
+- The command palette opens with Ctrl+Shift+P. Ctrl+K remains workspace search. Settings categories can be filtered using the Settings search field.

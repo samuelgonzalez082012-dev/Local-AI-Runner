@@ -10,6 +10,7 @@ const { createBrowserService } = require('./services/browser-service');
 const { atomicWriteFile } = require('./services/atomic-file');
 const { createToolRegistry } = require('./services/tool-registry');
 const { createWorkCoordinator } = require('./services/work-coordinator');
+const { createOpenRouterService } = require('./services/openrouter-service');
 
 // Preserve the user-data directory created by the original repository package.
 // This keeps existing IndexedDB chats, credentials, workspace selection and MCP settings.
@@ -26,6 +27,7 @@ let connectors = null;
 let browser = null;
 let toolRegistry = null;
 let workCoordinator = null;
+let openRouterService = null;
 let workFileWritesEnabled = false;
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
@@ -63,6 +65,17 @@ function trustedEditorTargets(exceptId = null) {
   return targets;
 }
 async function configureEditorBridge() {
+  ipcMain.on('editor:ai-request', (event, prompt) => {
+    try {
+      assertTrustedRenderer(event);
+      const value=String(prompt||'').trim();
+      if(!value||value.length>30000)throw new Error('Editor AI requests must contain between 1 and 30,000 characters.');
+      if(!mainWindow||mainWindow.isDestroyed())throw new Error('The main chat window is unavailable.');
+      mainWindow.webContents.send('editor:ai-request',value);
+      if(mainWindow.isMinimized())mainWindow.restore();
+      mainWindow.show();mainWindow.focus();
+    } catch(error) { console.warn('Rejected editor AI request:',error.message); }
+  });
   ipcMain.handle('editor:sync:get', event => {
     assertTrustedRenderer(event);
     return { ...editorSharedState, preferences: { ...editorPreferences } };
@@ -126,8 +139,9 @@ function normalizeModelRequest(options) {
   if (!['http:','https:'].includes(url.protocol)) throw new Error('Only HTTP and HTTPS model servers are supported.');
   if (url.search || url.hash) throw new Error('Model server endpoints cannot contain query strings or fragments.');
   if (url.protocol === 'http:' && !isLocalHost(url.hostname)) throw new Error('Remote model servers must use HTTPS. HTTP is only allowed for localhost.');
-  const allowedPath = /^\/(api\/(tags|show|chat|ps)|v1\/(models|chat\/completions|messages))\/?$/;
-  if (!allowedPath.test(url.pathname)) throw new Error('This endpoint is not part of the supported model-server API.');
+  const allowedPath = /^\/(api\/(tags|show|chat|ps|pull)|v1\/(models|chat\/completions|messages))\/?$/;
+  const openRouterApiPath = /^\/api\/v1\/(models|chat\/completions)$/;
+  if (!allowedPath.test(url.pathname) && !(url.origin === 'https://openrouter.ai' && openRouterApiPath.test(url.pathname))) throw new Error('This endpoint is not part of the supported model-server API.');
   const origin = url.origin;
   if (!isLocalHost(url.hostname) && !approvedModelOrigins.has(origin)) throw new Error('This remote model server has not been approved in this session.');
   const method = String(options.method || 'GET').toUpperCase();
@@ -136,7 +150,7 @@ function normalizeModelRequest(options) {
   const headers = {};
   for (const [name,value] of Object.entries(options.headers || {})) {
     const key = name.toLowerCase();
-    if (['content-type','authorization','accept','x-api-key','anthropic-version'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
+    if (['content-type','authorization','accept','x-api-key','anthropic-version','x-title'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
   }
   const body = options.body == null ? undefined : String(options.body);
   if (method === 'GET' && body) throw new Error('GET model requests cannot include a body.');
@@ -203,6 +217,19 @@ async function handleModelRequest(event, options) {
     if (error.name === 'AbortError') throw new Error('Model server request timed out.');
     throw new Error(`Could not contact the model server: ${error.message}`);
   } finally { clearTimeout(timeout); }
+}
+
+function configureOpenRouterService() {
+  openRouterService = createOpenRouterService({ safeStorage, fs, path, userData: app.getPath('userData') });
+  const handlers = {
+    'openrouter:status': () => openRouterService.status(),
+    'openrouter:key:set': value => openRouterService.setKey(String(value || '')),
+    'openrouter:models': () => openRouterService.models(),
+    'openrouter:chat': payload => openRouterService.chat(payload || {})
+  };
+  for (const [channel, handler] of Object.entries(handlers)) {
+    ipcMain.handle(channel, (event, ...args) => { assertTrustedRenderer(event); return handler(...args); });
+  }
 }
 
 function configureModelBridge() {
@@ -422,7 +449,10 @@ function configureWorkManager() {
     'work:workspace:write': async payload => {
       if (!workFileWritesEnabled) throw new Error('Agent file writes are disabled in Connections settings.');
       const relativePath = String(payload?.path || '').slice(0, 500);
-      const lock = workCoordinator.getState().locks.find(item => item.id === String(payload?.lockId || '') && item.file === relativePath && item.agentId === String(payload?.agentId || '') && item.mode === 'write');
+      const teamState = workCoordinator.getState();
+      const requestingAgent = teamState.team.agents.find(agent => agent.id === String(payload?.agentId || ''));
+      if (!requestingAgent || requestingAgent.enabled !== true || !Array.isArray(requestingAgent.tools) || !requestingAgent.tools.includes('write-proposal')) throw new Error('This agent is not authorized to propose workspace file changes.');
+      const lock = teamState.locks.find(item => item.id === String(payload?.lockId || '') && item.file === relativePath && item.agentId === requestingAgent.id && item.mode === 'write');
       if (!lock) throw new Error('A valid exclusive write lock is required before an agent can modify this file.');
       const content = String(payload?.content ?? '');
       const preview = await workspace.previewWrite(relativePath, content);
@@ -535,7 +565,7 @@ function configureScreenCapture() {
 function createEditorWindow() {
   const editorWindow = new BrowserWindow({width:1320,height:900,minWidth:760,minHeight:520,backgroundColor:'#0d1118',show:false,title:'Local AI Runner — Code Editor',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   editorWindows.add(editorWindow.webContents.id);
-  editorWindow.once('ready-to-show',()=>editorWindow.show());
+  editorWindow.once('ready-to-show',()=>{editorWindow.maximize();editorWindow.show();});
   editorWindow.on('closed',()=>editorWindows.delete(editorWindow.webContents.id));
   editorWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   editorWindow.loadFile(path.join(__dirname,'editor.html'));
@@ -561,6 +591,7 @@ app.whenReady().then(async()=>{
   configureModelBridge();
   configureDocuments();
   configureCredentials();
+  configureOpenRouterService();
   configureSystemMetrics();
   configureWorkspace();
   configureToolRegistry();
