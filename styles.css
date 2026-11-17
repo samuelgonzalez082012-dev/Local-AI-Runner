@@ -742,3 +742,5 @@ body.dock-resizing * {
 .settings-search{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}.settings-search>span{color:var(--muted)}.settings-search input{flex:1;min-width:180px;border:0;outline:none;background:transparent;color:var(--text);font:inherit}.settings-search small{flex:1 0 100%;color:var(--muted);font-size:10px}.settings-nav button[hidden]{display:none}
 
 #browserView.workspace-view,#editorView.workspace-view{padding:0;}#browserView .browser-host{background:var(--panel-2);}#chatView.has-both-docks .chat-column{min-width:0}#chatView.has-both-docks .browser-dock,#chatView.has-both-docks .editor-dock{width:var(--dock-panel-width,360px);max-width:none;flex-basis:var(--dock-panel-width,360px)}
+
+#editorView.workspace-view{display:flex;flex-direction:column;min-height:0}#editorView .page-heading{flex:0 0 auto;padding:18px 22px 10px}#editorStandaloneRoot{flex:1;min-height:0;padding:0 16px 16px}#editorStandaloneRoot .editor-shell{height:100%;min-height:0}
