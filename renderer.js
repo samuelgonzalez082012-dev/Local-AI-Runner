@@ -3355,6 +3355,7 @@
     });
 
     on('modelsRefresh','click',async()=>{await loadModels();renderModelCatalog();});
+    on('browseOllamaLibrary','click',async()=>{try{navigate('browser');await window.localAI.browser.navigate('https://ollama.com/library');}catch(error){toast('Could not open the Ollama model library: '+error.message);}});
     on('modelPullForm','submit',async event=>{
       event.preventDefault();
       const input=$('ollamaPullModel'),button=$('pullModelButton'),name=String(input?.value||'').trim();
