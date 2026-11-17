@@ -1876,6 +1876,7 @@
     throw new Error(`Unknown Work agent tool: ${name}`);
   }
   window.localAIWorkRunner = Object.freeze({
+    listModels() { return { provider: settings.backend, models: modelNames.slice(), defaultModel: settings.model || '' }; },
     async runAgent({ agent, prompt, signal, onActivity, taskId }) {
       const model=String(agent?.model||settings.model||'').trim();
       if(!model) throw new Error('Choose a model in the top bar before running a team task.');
@@ -2431,6 +2432,8 @@
   // ---------- models, benchmarking and runtime ----------
   let modelMetadata=[];
   let benchmarkHistory=[];
+  let systemAvailableMemoryBytes=null;
+  let activeModelPull=null;
   const benchmarkSelected=new Set();
   function renderModelCatalog(){
     const container=$('modelCatalog');container.replaceChildren();
@@ -2438,14 +2441,46 @@
     modelNames.forEach(model=>{
       const meta=modelMetadata.find(entry=>(entry.name||entry.id)===model)||{};
       const info=capabilities.get(model);
+      const estimatedBytes=Number.isFinite(meta.size)&&meta.size>0?meta.size*1.2:null;
+      const memoryNote=estimatedBytes&&Number.isFinite(systemAvailableMemoryBytes)?`Estimated runtime memory ~${formatBytes(estimatedBytes)} · system RAM available ${formatBytes(systemAvailableMemoryBytes)} (rough estimate; VRAM is not included)`:'Hardware fit unavailable until system memory is sampled';
       const card=document.createElement('article');card.className='model-card';
-      card.innerHTML=`<div class="card-icon">◈</div><h3>${escapeHTML(model)}</h3><p>${escapeHTML(meta.details?.family||meta.owned_by||t('localModel'))}</p><div class="card-meta"><span>${meta.size?`${(meta.size/1e9).toFixed(1)} GB`:t('sizeUnavailable')}</span><span>${info?.vision?escapeHTML(t('vision')):''}</span><span>${info?.thinking?escapeHTML(t('thinking')):''}</span><span>${info?.tools?escapeHTML(t('tools')):''}</span></div><label class="check-field"><input type="checkbox" data-model-bench="${escapeHTML(model)}" ${benchmarkSelected.has(model)?'checked':''}><span><strong>${escapeHTML(t('includeComparison'))}</strong></span></label><button class="btn full" data-use-model="${escapeHTML(model)}">${escapeHTML(t('useModel'))}</button>`;
+      card.innerHTML=`<div class="card-icon">◈</div><h3>${escapeHTML(model)}</h3><p>${escapeHTML(meta.details?.family||meta.owned_by||t('localModel'))}</p><div class="card-meta"><span>${meta.size?`${(meta.size/1e9).toFixed(1)} GB`:t('sizeUnavailable')}</span><span>${info?.vision?escapeHTML(t('vision')):''}</span><span>${info?.thinking?escapeHTML(t('thinking')):''}</span><span>${info?.tools?escapeHTML(t('tools')):''}</span></div><p class="model-hardware-note">${escapeHTML(memoryNote)}</p><label class="check-field"><input type="checkbox" data-model-bench="${escapeHTML(model)}" ${benchmarkSelected.has(model)?'checked':''}><span><strong>${escapeHTML(t('includeComparison'))}</strong></span></label><button class="btn full" data-use-model="${escapeHTML(model)}">${escapeHTML(t('useModel'))}</button>`;
       card.querySelector('[data-use-model]').addEventListener('click',event=>{event.stopPropagation();const chat=current();settings.model=model;if(chat)chat.model=model;saveSettings();scheduleSave();syncModelSelect();updateCapabilityBadges();ensureCapabilities(model);setInspectorModel();navigate('chat');toast(`Selected ${model}.`);});
       card.querySelector('[data-model-bench]').addEventListener('change',event=>{if(event.target.checked){if(benchmarkSelected.size>=3){event.target.checked=false;toast('Choose no more than three models.');return;}benchmarkSelected.add(model);}else benchmarkSelected.delete(model);});
       container.appendChild(card);
     });
     $('modelMetrics').innerHTML=`<div class="metric-card"><span>${escapeHTML(t('installedModels'))}</span><strong>${modelNames.length}</strong><small>${escapeHTML(t('reportedByServer'))}</small></div><div class="metric-card"><span>${escapeHTML(t('selectedModel'))}</span><strong style="font-size:11px">${escapeHTML(current()?.model||settings.model||'None')}</strong><small>${escapeHTML(t('forCurrentChat'))}</small></div><div class="metric-card"><span>${escapeHTML(t('lastMeasuredSpeed'))}</span><strong>${lastModelStats?.tokensPerSecond?`${lastModelStats.tokensPerSecond.toFixed(1)} t/s`:'—'}</strong><small>${lastModelStats?escapeHTML(lastModelStats.model):escapeHTML(t('noMeasurement'))}</small></div>`;
   }
+  async function pullOllamaModel(modelName){
+    if(settings.backend!=='ollama')throw new Error('Model downloads are available when Ollama is the selected backend.');
+    if(!window.localAI?.stream)throw new Error('The secure model-server streaming bridge is unavailable.');
+    await ensureServerApproved();
+    const statusNode=$('modelPullStatus'),progressNode=$('modelPullProgress');
+    if(statusNode)statusNode.textContent='Preparing download…';
+    if(progressNode){progressNode.hidden=false;progressNode.value=0;}
+    return new Promise((resolve,reject)=>{
+      const decoder=new TextDecoder();let buffer='';let settled=false;
+      const finish=(error)=>{if(settled)return;settled=true;activeModelPull=null;if(error)reject(error);else resolve(true);};
+      const consume=line=>{const value=line.trim();if(!value)return;let packet;try{packet=JSON.parse(value);}catch(_){return;}
+        if(packet.error){finish(new Error(String(packet.error).slice(0,500)));return;}
+        if(statusNode)statusNode.textContent=String(packet.status||'Downloading model…');
+        if(progressNode&&Number(packet.total)>0&&Number.isFinite(Number(packet.completed))){progressNode.value=Math.max(0,Math.min(100,Number(packet.completed)/Number(packet.total)*100));}
+      };
+      const id=window.localAI.stream({url:baseURL()+'/api/pull',method:'POST',headers:requestHeaders('POST'),body:JSON.stringify({name:modelName,stream:true})},packet=>{
+        if(settled)return;
+        if(packet.type==='chunk'){
+          buffer+=decoder.decode(Uint8Array.from(packet.bytes||[]),{stream:true});
+          const lines=buffer.split('\\n');buffer=lines.pop()||'';lines.forEach(consume);
+        }else if(packet.type==='done'){
+          buffer+=decoder.decode();consume(buffer);if(statusNode)statusNode.textContent='Download complete.';if(progressNode)progressNode.value=100;finish();
+        }else if(packet.type==='aborted')finish(new Error('Model download cancelled.'));
+        else if(packet.type==='http-error')finish(new Error('Ollama returned HTTP '+packet.status+': '+String(packet.body||'').slice(0,300)));
+        else if(packet.type==='error')finish(new Error(String(packet.message||'Model download failed.')));
+      });
+      activeModelPull={id,model:modelName};
+    });
+  }
+
   async function runBenchmark(){
     if(benchmarkBusy)return;
     if(running.size){toast('Wait for active generations to finish before benchmarking models.');return;}
@@ -2484,7 +2519,10 @@
     try{
       const metrics=await window.localAI.system.metrics();
       const memory=metrics.systemMemoryKB||{};
-      const total=memory.total,free=memory.available??memory.free;
+      const availableKB=memory.available??memory.free;
+      systemAvailableMemoryBytes=Number.isFinite(availableKB)?availableKB*1024:null;
+      renderModelCatalog();
+      const total=memory.total,free=availableKB;
       const used=Number.isFinite(total)&&Number.isFinite(free)?Math.max(0,total-free):null;
       const processes=Array.isArray(metrics.processes)?metrics.processes:[];
       const visibleProcesses=processes.slice().sort((a,b)=>(b.workingSetKB||0)-(a.workingSetKB||0)).slice(0,8);
@@ -3280,6 +3318,18 @@
     });
 
     on('modelsRefresh','click',async()=>{await loadModels();renderModelCatalog();});
+    on('modelPullForm','submit',async event=>{
+      event.preventDefault();
+      const input=$('ollamaPullModel'),button=$('pullModelButton'),name=String(input?.value||'').trim();
+      if(!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(name)){toast('Enter a valid Ollama model name, for example qwen2.5-coder:7b.');return;}
+      if(activeModelPull){toast('A model download is already running.');return;}
+      if(button)button.disabled=true;
+      $('cancelModelPull').hidden=false;
+      try{await pullOllamaModel(name);if(input)input.value='';await loadModels();renderModelCatalog();toast('Model downloaded and added to your installed library.');}
+      catch(error){$('modelPullStatus').textContent=error.message;toast(error.message);}
+      finally{if(button)button.disabled=false;$('cancelModelPull').hidden=true;}
+    });
+    on('cancelModelPull','click',()=>{if(activeModelPull?.id)window.localAI.abortStream(activeModelPull.id);});
     on('runBenchmark','click',runBenchmark);
     on('refreshRuntime','click',refreshRuntime);
     on('newTask','click',openTaskEditor);
