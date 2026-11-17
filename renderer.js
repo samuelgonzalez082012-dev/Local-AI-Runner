@@ -1637,7 +1637,8 @@
     return {};
   }
 
-  async function streamCompletion({ model, messages, tools, toolFallbackPrompt = '', signal, onDelta }) {
+  async function streamCompletion({ model, messages, tools, toolFallbackPrompt = '', signal, onDelta, maxTokensOverride }) {
+    const tokenLimit=Math.max(256,Math.min(16000,Number(maxTokensOverride)||settings.maxTokens||4096));
     await ensureServerApproved();
     const result = { content: '', thinking: '', toolCalls: [], chunks: 0, evalCount: 0, evalDuration: 0, rawContent: '', reasoningField: '' };
     const partialCalls = new Map();
@@ -1650,12 +1651,12 @@
       ? { model, messages: wireMessages, stream: true, options: {
           temperature: settings.temp, top_p: settings.topP, repeat_penalty: settings.repeatPenalty,
           ...(settings.numCtx > 0 ? { num_ctx: settings.numCtx } : {}),
-          ...(settings.maxTokens > 0 ? { num_predict: settings.maxTokens } : {})
+          ...(tokenLimit > 0 ? { num_predict: tokenLimit } : {})
         }, ...(tools.length ? { tools } : {}) }
       : settings.backend === 'anthropic'
-        ? { model, max_tokens: settings.maxTokens > 0 ? settings.maxTokens : 4096, messages: wireMessages.messages, ...(wireMessages.system ? { system: wireMessages.system } : {}), stream: true, ...(tools.length ? { tools } : {}) }
+        ? { model, max_tokens: tokenLimit, messages: wireMessages.messages, ...(wireMessages.system ? { system: wireMessages.system } : {}), stream: true, ...(tools.length ? { tools } : {}) }
         : { model, messages: wireMessages, stream: true, temperature: settings.temp, top_p: settings.topP,
-            ...(settings.maxTokens > 0 ? { max_tokens: settings.maxTokens } : {}), ...(tools.length ? { tools } : {}) };
+            ...(tokenLimit > 0 ? { max_tokens: tokenLimit } : {}), ...(tools.length ? { tools } : {}) };
     if (settings.backend === 'ollama') {
       const info = capabilities.get(model);
       if (info?.thinking) requestBody.think = settings.thinkMode !== 'off';
@@ -1877,7 +1878,10 @@
   }
   window.localAIWorkRunner = Object.freeze({
     listModels() { return { provider: settings.backend, models: modelNames.slice(), defaultModel: settings.model || '' }; },
-    async runAgent({ agent, prompt, signal, onActivity, taskId }) {
+    async runAgent({ agent, prompt, signal, onActivity, taskId, maxSteps = 8, timeoutMs = 600000, maxTokens = 4096 }) {
+      const timeoutSignal=Number(timeoutMs)>0?AbortSignal.timeout(Math.max(1000,Math.min(7200000,Number(timeoutMs)))):null;
+      const runSignal=signal&&timeoutSignal?AbortSignal.any([signal,timeoutSignal]):signal||timeoutSignal||new AbortController().signal;
+      const roundLimit=Math.max(1,Math.min(40,Number(maxSteps)||8));
       const model=String(agent?.model||settings.model||'').trim();
       if(!model) throw new Error('Choose a model in the top bar before running a team task.');
       if(agent?.provider&&agent.provider!=='inherit') throw new Error(`Agent provider “${agent.provider}” is not the active configured provider. Select “Use default provider” or switch the app connection before running this agent.`);
@@ -1894,9 +1898,9 @@
       const system=[settings.system,agent?.instructions||'',`You are ${agent?.name||'an AI team agent'} with role ${agent?.role||'assistant'}. You are working in a selected local project workspace. Inspect relevant files before editing. Use workspace tools for real file operations. File writes require user approval and an exclusive lock. Do not claim a file changed unless write_workspace_file confirms success. Respect the task scope and shared project instructions.`].filter(Boolean).join('\n\n');
       const messages=[{role:'system',content:system},{role:'user',content:String(prompt||'')}];
       let finalText='';
-      for(let round=0;round<8;round++) {
-        if(signal?.aborted) throw new DOMException('The agent run was cancelled.','AbortError');
-        const result=await streamCompletion({model,messages,tools:permitted,toolFallbackPrompt:fallback.prompt,signal:signal||new AbortController().signal,onDelta:()=>{}});
+      for(let round=0;round<roundLimit;round++) {
+        if(runSignal.aborted) throw new DOMException('The agent run was cancelled.','AbortError');
+        const result=await streamCompletion({model,messages,tools:permitted,toolFallbackPrompt:fallback.prompt,signal:runSignal,maxTokensOverride:maxTokens,onDelta:()=>{}});
         if(!nativeTools&&result.toolCalls.some(call=>!allowedFallbackNames.has(call.name)))throw new Error('The local model requested a tool outside this agent’s permission set.');
         finalText=result.content||finalText;
         if(!result.toolCalls?.length) break;
@@ -1904,12 +1908,12 @@
         for(const call of result.toolCalls) {
           onActivity?.({type:'tool-start',agentId:agent.id,tool:call.name,args:call.args||{}});
           let output;
-          try { output=await executeWorkAgentTool(call.name,call.args||{},agent,signal,onActivity,taskId); }
+          try { output=await executeWorkAgentTool(call.name,call.args||{},agent,runSignal,onActivity,taskId); }
           catch(error) { output=`Tool error: ${error.message}`; }
           messages.push({role:'tool',tool_call_id:call.id,tool_name:call.name,name:call.name,content:String(output).slice(0,12000)});
           onActivity?.({type:'tool-finish',agentId:agent.id,tool:call.name,result:String(output).slice(0,500)});
         }
-        if(round===7) finalText+='\n\nThe agent reached its eight tool-round limit.';
+        if(round===roundLimit-1) finalText+=`\n\nThe agent reached its ${roundLimit} tool-round limit.`;
       }
       if(!finalText?.trim()) throw new Error(`${agent?.name||'Agent'} returned an empty response.`);
       return finalText;
