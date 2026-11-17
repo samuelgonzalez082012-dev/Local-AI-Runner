@@ -6,6 +6,7 @@
     { label: 'Open Work Manager', group: 'Navigate', icon: '◈', action: () => navigate('work') },
     { label: 'Open Models', group: 'Navigate', icon: '◇', action: () => navigate('models') },
     { label: 'Open Browser', group: 'Navigate', icon: '◍', action: () => navigate('browser') },
+    { label: 'Open Code Editor', group: 'Navigate', icon: '⌘', action: () => navigate('editor') },
     { label: 'Open Tasks', group: 'Navigate', icon: '◷', action: () => navigate('tasks') },
     { label: 'Open Connections', group: 'Navigate', icon: '⌘', action: () => navigate('connections') },
     { label: 'Open Memory', group: 'Navigate', icon: '✧', action: () => navigate('memory') },
