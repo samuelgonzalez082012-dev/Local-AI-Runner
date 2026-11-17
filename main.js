@@ -65,15 +65,16 @@ function trustedEditorTargets(exceptId = null) {
   return targets;
 }
 async function configureEditorBridge() {
-  ipcMain.handle('editor:ai-request', async (event, prompt) => {
-    assertTrustedRenderer(event);
-    const value=String(prompt||'').trim();
-    if(!value||value.length>30000)throw new Error('Editor AI requests must contain between 1 and 30,000 characters.');
-    if(!mainWindow||mainWindow.isDestroyed())throw new Error('The main chat window is unavailable.');
-    mainWindow.webContents.send('editor:ai-request',value);
-    if(mainWindow.isMinimized())mainWindow.restore();
-    mainWindow.show();mainWindow.focus();
-    return {sent:true};
+  ipcMain.on('editor:ai-request', (event, prompt) => {
+    try {
+      assertTrustedRenderer(event);
+      const value=String(prompt||'').trim();
+      if(!value||value.length>30000)throw new Error('Editor AI requests must contain between 1 and 30,000 characters.');
+      if(!mainWindow||mainWindow.isDestroyed())throw new Error('The main chat window is unavailable.');
+      mainWindow.webContents.send('editor:ai-request',value);
+      if(mainWindow.isMinimized())mainWindow.restore();
+      mainWindow.show();mainWindow.focus();
+    } catch(error) { console.warn('Rejected editor AI request:',error.message); }
   });
   ipcMain.handle('editor:sync:get', event => {
     assertTrustedRenderer(event);
