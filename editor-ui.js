@@ -137,7 +137,7 @@ async function searchWorkspace(root,term){
    });
    resultsPanel.append(button);
   });
-  if(response?.capped){const note=document.createElement('p');note.className='editor-search-capped';note.textContent='Search reached the workspace scan limit. Narrow the search term or search a smaller folder.';resultsPanel.append(note);}
+  if(response.capped){const note=document.createElement('p');note.className='editor-search-capped';note.textContent='Search reached the workspace scan limit. Narrow the search term or search a smaller folder.';resultsPanel.append(note);}
  }catch(error){resultsPanel.innerHTML='<div class="editor-tree-message">'+esc(error.message)+'</div>';}
 }
 async function openFile(path){
