@@ -1902,7 +1902,7 @@
   window.localAIWorkRunner = Object.freeze({
     listModels() { return { provider: settings.backend, models: modelNames.slice(), defaultModel: settings.model || '' }; },
     async listProviderModels(provider) { if(provider==='openrouter'){await ensureServerApproved('https://openrouter.ai/api/v1');return await window.localAI.openRouter.models();} return modelNames.slice(); },
-    async runAgent({ agent, prompt, signal, onActivity, taskId, maxSteps = 8, timeoutMs = 600000, maxTokens = 4096 }) {
+    async runAgent({ agent, prompt, signal, onActivity, taskId, maxSteps = 8, timeoutMs = 600000, maxTokens = 4096, waitIfPaused }) {
       const timeoutSignal=Number(timeoutMs)>0?AbortSignal.timeout(Math.max(1000,Math.min(7200000,Number(timeoutMs)))):null;
       const runSignal=signal&&timeoutSignal?AbortSignal.any([signal,timeoutSignal]):signal||timeoutSignal||new AbortController().signal;
       const roundLimit=Math.max(1,Math.min(40,Number(maxSteps)||8));
@@ -1926,6 +1926,7 @@
       const messages=[{role:'system',content:system},{role:'user',content:String(prompt||'')}];
       let finalText='';
       for(let round=0;round<roundLimit;round++) {
+        await waitIfPaused?.();
         if(runSignal.aborted) throw new DOMException('The agent run was cancelled.','AbortError');
         const result=await streamCompletion({model,messages,tools:permitted,toolFallbackPrompt:fallback.prompt,signal:runSignal,maxTokensOverride:maxTokens,providerOverride:provider,onDelta:()=>{}});
         if(!nativeTools&&result.toolCalls.some(call=>!allowedFallbackNames.has(call.name)))throw new Error('The local model requested a tool outside this agent’s permission set.');
@@ -1933,6 +1934,7 @@
         if(!result.toolCalls?.length) break;
         messages.push({role:'assistant',content:result.content||'',tool_calls:result.toolCalls.map(call=>({id:call.id,name:call.name,args:call.args||{}}))});
         for(const call of result.toolCalls) {
+          await waitIfPaused?.();
           onActivity?.({type:'tool-start',agentId:agent.id,tool:call.name,args:call.args||{}});
           let output;
           try { output=await executeWorkAgentTool(call.name,call.args||{},agent,runSignal,onActivity,taskId); }
