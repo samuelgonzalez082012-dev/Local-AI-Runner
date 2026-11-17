@@ -101,7 +101,7 @@ async function askEditorAI(action,root){
  const input=root.querySelector('.editor-input');
  const hasSelection=!!input&&input.selectionEnd>input.selectionStart;
  const selected=hasSelection?input.value.slice(input.selectionStart,input.selectionEnd):'';
- const source=(selected||tab.content).slice(0,20000);
+ const source=(selected||(input?input.value:tab.content)).slice(0,20000);
  const instructions={
   explain:'Explain the selected code or active file clearly, including its purpose and important behavior.',
   debug:'Inspect the selected code or active file for likely bugs and propose safe fixes.',
