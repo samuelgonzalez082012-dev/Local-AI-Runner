@@ -724,7 +724,7 @@
     try {
       let data;
       const endpoint = settings.backend === 'ollama' ? '/api/tags' : settings.backend === 'openrouter' ? '/models' : '/v1/models';
-      if(settings.backend==='openrouter') { await ensureServerApproved('https://openrouter.ai/api/v1'); data={data:await window.localAI.openRouter.models()}; }
+      if(settings.backend==='openrouter') { const status=await window.localAI.openRouter.status();if(!status.connected)throw new Error('An OpenRouter API key is required. Add it in Connections.');await ensureServerApproved('https://openrouter.ai/api/v1'); data={data:await window.localAI.openRouter.models()}; }
       else data = await apiRequest(baseURL() + endpoint);
       modelMetadata = settings.backend === 'ollama' ? (data.models || []) : (data.data || []);
       modelNames = settings.backend === 'ollama'
@@ -1902,7 +1902,7 @@
   }
   window.localAIWorkRunner = Object.freeze({
     listModels() { return { provider: settings.backend, models: modelNames.slice(), defaultModel: settings.model || '' }; },
-    async listProviderModels(provider) { if(provider==='openrouter'){await ensureServerApproved('https://openrouter.ai/api/v1');return await window.localAI.openRouter.models();} return modelNames.slice(); },
+    async listProviderModels(provider) { if(provider==='openrouter'){const status=await window.localAI.openRouter.status();if(!status.connected)throw new Error('An OpenRouter API key is required. Add it in Connections.');await ensureServerApproved('https://openrouter.ai/api/v1');return await window.localAI.openRouter.models();} return modelNames.slice(); },
     async runAgent({ agent, prompt, signal, onActivity, taskId, maxSteps = 8, timeoutMs = 600000, maxTokens = 4096, waitIfPaused }) {
       const timeoutSignal=Number(timeoutMs)>0?AbortSignal.timeout(Math.max(1000,Math.min(7200000,Number(timeoutMs)))):null;
       const runSignal=signal&&timeoutSignal?AbortSignal.any([signal,timeoutSignal]):signal||timeoutSignal||new AbortController().signal;
@@ -3149,7 +3149,7 @@
     });
     on('connectButton', 'click', loadModels);
     on('saveOpenRouterKey','click',async()=>{const key=$('openRouterApiKey').value.trim();if(!key){toast('Enter an OpenRouter API key first.');return;}try{await window.localAI.openRouter.setKey(key);$('openRouterApiKey').value='';$('openRouterConnectionStatus').textContent='OpenRouter key stored securely.';toast('OpenRouter key saved securely.');}catch(error){$('openRouterConnectionStatus').textContent=error.message;toast(error.message);}});
-    on('testOpenRouter','click',async()=>{try{await ensureServerApproved('https://openrouter.ai/api/v1');const models=await window.localAI.openRouter.models();$('openRouterConnectionStatus').textContent='Connected. '+models.length+' hosted models available. Model usage may incur charges.';}catch(error){$('openRouterConnectionStatus').textContent=error.message;toast(error.message);}});
+    on('testOpenRouter','click',async()=>{try{const status=await window.localAI.openRouter.status();if(!status.connected)throw new Error('An OpenRouter API key is required. Add it in Connections.');await ensureServerApproved('https://openrouter.ai/api/v1');const models=await window.localAI.openRouter.models();$('openRouterConnectionStatus').textContent='Connected. '+models.length+' hosted models available. Model usage may incur charges.';}catch(error){$('openRouterConnectionStatus').textContent=error.message;toast(error.message);}});
     on('clearOpenRouterKey','click',async()=>{try{await window.localAI.openRouter.setKey('');$('openRouterConnectionStatus').textContent='OpenRouter key cleared.';toast('OpenRouter key cleared.');}catch(error){toast(error.message);}});
     on('system', 'input', event => setSetting('system', event.target.value));
     on('chatSystem', 'input', event => {
