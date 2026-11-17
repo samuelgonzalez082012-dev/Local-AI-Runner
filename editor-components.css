@@ -34,3 +34,5 @@
 .editor-shell.tabs-collapsed .editor-tabs{display:none}.editor-tree-children{display:grid;gap:2px}.editor-tree-folder>.editor-tree-item[aria-expanded=true]{color:var(--ed-accent)}.editor-tree-item[aria-expanded=true] span:first-child{color:var(--ed-accent)}
 
 .editor-indent-guide{display:inline-block;height:100%;border-left:1px solid color-mix(in srgb,var(--ed-text) 17%,transparent);padding-left:0;margin-left:0}#editorDockRoot .editor-explorer:hover{width:280px;flex-basis:280px;z-index:4;box-shadow:8px 0 24px rgba(0,0,0,.18)}#editorDockRoot .editor-shell.show-ai-panel .editor-ai-panel{display:flex;flex-direction:column;min-height:0;overflow:auto}
+
+.editor-window-main .editor-shell{width:100%;min-width:0;border-radius:0}
