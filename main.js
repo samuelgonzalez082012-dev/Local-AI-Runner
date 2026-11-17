@@ -10,6 +10,7 @@ const { createBrowserService } = require('./services/browser-service');
 const { atomicWriteFile } = require('./services/atomic-file');
 const { createToolRegistry } = require('./services/tool-registry');
 const { createWorkCoordinator } = require('./services/work-coordinator');
+const { createOpenRouterService } = require('./services/openrouter-service');
 
 // Preserve the user-data directory created by the original repository package.
 // This keeps existing IndexedDB chats, credentials, workspace selection and MCP settings.
@@ -26,6 +27,7 @@ let connectors = null;
 let browser = null;
 let toolRegistry = null;
 let workCoordinator = null;
+let openRouterService = null;
 let workFileWritesEnabled = false;
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
@@ -127,7 +129,8 @@ function normalizeModelRequest(options) {
   if (url.search || url.hash) throw new Error('Model server endpoints cannot contain query strings or fragments.');
   if (url.protocol === 'http:' && !isLocalHost(url.hostname)) throw new Error('Remote model servers must use HTTPS. HTTP is only allowed for localhost.');
   const allowedPath = /^\/(api\/(tags|show|chat|ps)|v1\/(models|chat\/completions|messages))\/?$/;
-  if (!allowedPath.test(url.pathname)) throw new Error('This endpoint is not part of the supported model-server API.');
+  const openRouterApiPath = /^\\/api\\/v1\\/(models|chat\\/completions)$/;
+  if (!allowedPath.test(url.pathname) && !(url.origin === 'https://openrouter.ai' && openRouterApiPath.test(url.pathname))) throw new Error('This endpoint is not part of the supported model-server API.');
   const origin = url.origin;
   if (!isLocalHost(url.hostname) && !approvedModelOrigins.has(origin)) throw new Error('This remote model server has not been approved in this session.');
   const method = String(options.method || 'GET').toUpperCase();
@@ -136,7 +139,7 @@ function normalizeModelRequest(options) {
   const headers = {};
   for (const [name,value] of Object.entries(options.headers || {})) {
     const key = name.toLowerCase();
-    if (['content-type','authorization','accept','x-api-key','anthropic-version'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
+    if (['content-type','authorization','accept','x-api-key','anthropic-version','x-title'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
   }
   const body = options.body == null ? undefined : String(options.body);
   if (method === 'GET' && body) throw new Error('GET model requests cannot include a body.');
@@ -203,6 +206,19 @@ async function handleModelRequest(event, options) {
     if (error.name === 'AbortError') throw new Error('Model server request timed out.');
     throw new Error(`Could not contact the model server: ${error.message}`);
   } finally { clearTimeout(timeout); }
+}
+
+function configureOpenRouterService() {
+  openRouterService = createOpenRouterService({ safeStorage, fs, path, userData: app.getPath('userData') });
+  const handlers = {
+    'openrouter:status': () => openRouterService.status(),
+    'openrouter:key:set': value => openRouterService.setKey(String(value || '')),
+    'openrouter:models': () => openRouterService.models(),
+    'openrouter:chat': payload => openRouterService.chat(payload || {})
+  };
+  for (const [channel, handler] of Object.entries(handlers)) {
+    ipcMain.handle(channel, (event, ...args) => { assertTrustedRenderer(event); return handler(...args); });
+  }
 }
 
 function configureModelBridge() {
@@ -564,6 +580,7 @@ app.whenReady().then(async()=>{
   configureModelBridge();
   configureDocuments();
   configureCredentials();
+  configureOpenRouterService();
   configureSystemMetrics();
   configureWorkspace();
   configureToolRegistry();
