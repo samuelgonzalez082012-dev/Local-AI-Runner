@@ -3436,6 +3436,8 @@
     }, 500);
   }
 
+  window.localAI?.editor?.onAIRequest?.(promptText=>{navigate('chat');const input=$('input');input.value=String(promptText||'');input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();toast('Editor request is ready in Chat. Review it and send when ready.');});
+
   async function initialize() {
     normalizeSettings();
     await window.localAI?.work?.setFileWritesEnabled?.(settings.allowFileWrites).catch(error=>console.warn('Could not sync Work file-write permission:',error));
