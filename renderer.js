@@ -1638,7 +1638,8 @@
   }
 
   async function streamCompletion({ model, messages, tools, toolFallbackPrompt = '', signal, onDelta, maxTokensOverride }) {
-    const tokenLimit=Math.max(256,Math.min(16000,Number(maxTokensOverride)||settings.maxTokens||4096));
+    const hasTokenOverride=maxTokensOverride!==undefined&&maxTokensOverride!==null&&Number.isFinite(Number(maxTokensOverride));
+    const tokenLimit=hasTokenOverride?Math.max(256,Math.min(16000,Number(maxTokensOverride))):settings.maxTokens;
     await ensureServerApproved();
     const result = { content: '', thinking: '', toolCalls: [], chunks: 0, evalCount: 0, evalDuration: 0, rawContent: '', reasoningField: '' };
     const partialCalls = new Map();
@@ -1654,7 +1655,7 @@
           ...(tokenLimit > 0 ? { num_predict: tokenLimit } : {})
         }, ...(tools.length ? { tools } : {}) }
       : settings.backend === 'anthropic'
-        ? { model, max_tokens: tokenLimit, messages: wireMessages.messages, ...(wireMessages.system ? { system: wireMessages.system } : {}), stream: true, ...(tools.length ? { tools } : {}) }
+        ? { model, max_tokens: tokenLimit > 0 ? tokenLimit : 4096, messages: wireMessages.messages, ...(wireMessages.system ? { system: wireMessages.system } : {}), stream: true, ...(tools.length ? { tools } : {}) }
         : { model, messages: wireMessages, stream: true, temperature: settings.temp, top_p: settings.topP,
             ...(tokenLimit > 0 ? { max_tokens: tokenLimit } : {}), ...(tools.length ? { tools } : {}) };
     if (settings.backend === 'ollama') {
