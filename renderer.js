@@ -2468,7 +2468,8 @@
   let systemAvailableMemoryBytes=null;
   let activeModelPull=null;
   const benchmarkSelected=new Set();
-  function formatOpenRouterPrice(value){const price=Number(value);if(!Number.isFinite(price)||price<0)return 'Unknown';return price===0?'Free':String.fromCharCode(36)+(price*1000000).toFixed(2)+' / 1M tokens';}
+  function formatOpenRouterPrice(value){const price=Number(value);if(!Number.isFinite(price)||price<0)return 'Unknown';return price===0?'Free':String.fromCharCode(36)+(price*1000000).toFixed(2)+' / 1M tokens';} 
+  function renderModelCatalog(){
     const container=$('modelCatalog');container.replaceChildren();
     if(!modelNames.length){container.innerHTML=`<div class="section-card"><h2>${escapeHTML(t('noModels'))}</h2><p>${escapeHTML(t('connectRefresh'))}</p></div>`;return;}
     modelNames.forEach(model=>{
