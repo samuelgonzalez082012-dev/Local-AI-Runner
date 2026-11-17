@@ -41,7 +41,7 @@ test('per-agent model routing keeps hosted models optional and credentials encry
   const index = read('index.html');
   assert.match(work, /inspectAgentProvider/);
   assert.match(work, /listProviderModels/);
-  assert.match(renderer, /providerOverride==='openrouter'/);
+  assert.ok(renderer.includes('providerOverride||settings.backend'));
   assert.match(service, /secureStorageAvailable/);
   assert.match(service, /An OpenRouter API key is required/);
   assert.match(index, /Ollama \(local\)/);
