@@ -3123,7 +3123,7 @@
     };
 
     on('backend', 'change', event => {
-      settings.backend = ['openai','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
+      settings.backend = ['openai','openrouter','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
       settings.baseUrl = URL_DEFAULTS[settings.backend];
       $('baseUrl').value = settings.baseUrl;
       approvedModelServer = '';
