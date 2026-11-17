@@ -1653,6 +1653,7 @@
       });
       if(toolFallbackPrompt)openMessages.unshift({role:'system',content:toolFallbackPrompt});
       const response=await window.localAI.openRouter.chat({model,messages:openMessages,tools:tools||[],temperature:settings.temp,max_tokens:maxTokensOverride||settings.maxTokens||4096});
+      if(signal?.aborted)throw new DOMException('The agent run was cancelled.','AbortError');
       const choice=response.choices?.[0]?.message||{};
       const content=typeof choice.content==='string'?choice.content:'';
       const toolCalls=(choice.tool_calls||[]).map(call=>({id:call.id||uid(),name:call.function?.name||'',args:normalizeToolArguments(call.function?.arguments)}));
@@ -1909,7 +1910,7 @@
       if(provider!=='openrouter'&&provider!==settings.backend)throw new Error(`Agent provider “${provider}” is not the active application provider.`);
       const model=String(agent?.model||(provider===settings.backend?settings.model:'')).trim();
       if(!model) throw new Error(provider==='openrouter'?'Choose an OpenRouter model for this agent.':'Choose a model in the top bar before running a team task.');
-      if(provider==='openrouter'){const status=await window.localAI.openRouter.status();if(!status.connected)throw new Error('Connect an OpenRouter API key in Connections before running this agent.');await ensureServerApproved('https://openrouter.ai/api/v1');}
+      if(provider==='openrouter'){const status=await window.localAI.openRouter.status();if(!status.connected)throw new Error('An OpenRouter API key is required. Connect it in Connections before running this agent.');await ensureServerApproved('https://openrouter.ai/api/v1');}
       else await ensureServerApproved();
       const permittedDefinitions=WORK_AGENT_TOOLS.filter(item=>{
         const name=item.function.name;
