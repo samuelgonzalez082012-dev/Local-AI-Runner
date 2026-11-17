@@ -74,7 +74,7 @@
     root.dataset.activeView=activeWorkView;
     document.querySelectorAll('[data-work-view]').forEach(tab=>{const active=tab.dataset.workView===activeWorkView;tab.classList.toggle('active',active);if(active)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');});
     byId('workOverview')?.classList.toggle('work-view-hidden',activeWorkView!=='overview');
-    document.querySelectorAll('[data-work-panel]').forEach(panel=>{const views=(panel.dataset.workViews||'').split(/\\s+/);panel.classList.toggle('work-view-hidden',!views.includes(activeWorkView));});
+    document.querySelectorAll('[data-work-panel]').forEach(panel=>{const views=(panel.dataset.workViews||'').split(/\s+/);panel.classList.toggle('work-view-hidden',!views.includes(activeWorkView));});
   }
   function setWorkView(view){if(!['overview','team','tasks','activity','workspace','knowledge'].includes(view))return;activeWorkView=view;applyWorkView();}
   function applyLayout(){const hidden=new Set(state?.layout?.hidden||[]);const order=state?.layout?.panels||[];document.querySelectorAll('[data-work-panel]').forEach(panel=>{panel.hidden=hidden.has(panel.dataset.workPanel);panel.style.order=String(Math.max(0,order.indexOf(panel.dataset.workPanel)));const width=Number(state?.layout?.widths?.[panel.dataset.workPanel]);panel.style.width=width>=220?`${width}px`:'';});}
