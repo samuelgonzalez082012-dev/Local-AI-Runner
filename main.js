@@ -422,7 +422,10 @@ function configureWorkManager() {
     'work:workspace:write': async payload => {
       if (!workFileWritesEnabled) throw new Error('Agent file writes are disabled in Connections settings.');
       const relativePath = String(payload?.path || '').slice(0, 500);
-      const lock = workCoordinator.getState().locks.find(item => item.id === String(payload?.lockId || '') && item.file === relativePath && item.agentId === String(payload?.agentId || '') && item.mode === 'write');
+      const teamState = workCoordinator.getState();
+      const requestingAgent = teamState.team.agents.find(agent => agent.id === String(payload?.agentId || ''));
+      if (!requestingAgent || requestingAgent.enabled !== true || !Array.isArray(requestingAgent.tools) || !requestingAgent.tools.includes('write-proposal')) throw new Error('This agent is not authorized to propose workspace file changes.');
+      const lock = teamState.locks.find(item => item.id === String(payload?.lockId || '') && item.file === relativePath && item.agentId === requestingAgent.id && item.mode === 'write');
       if (!lock) throw new Error('A valid exclusive write lock is required before an agent can modify this file.');
       const content = String(payload?.content ?? '');
       const preview = await workspace.previewWrite(relativePath, content);
