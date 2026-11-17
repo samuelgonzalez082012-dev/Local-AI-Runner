@@ -101,11 +101,14 @@
     if(taskAssignee&&taskAssignee.id!==planner.id&&taskAssignee.id!==reviewer?.id&&!developers.some(agent=>agent.id===taskAssignee.id)){toast('The selected task owner does not have permission to participate in implementation.');return;}
     if(taskAssignee&&developers.some(agent=>agent.id===taskAssignee.id))developers.sort((a,b)=>a.id===taskAssignee.id?-1:b.id===taskAssignee.id?1:0);
     const controller=new AbortController();
-    const agentBudget={maxSteps:Number(state.team.maxStepsPerAgent)||8,timeoutMs:(Number(state.team.agentTimeoutMinutes)||10)*60000,maxTokens:Number(state.team.maxTokensPerAgent)||4096};
+    const runControl={controller,paused:false,waiters:[],pause(){this.paused=true;},resume(){this.paused=false;this.waiters.splice(0).forEach(resolve=>resolve());},async waitIfPaused(){while(this.paused&&!controller.signal.aborted)await new Promise(resolve=>this.waiters.push(resolve));if(controller.signal.aborted)throw new DOMException('The team run was stopped.','AbortError');}};
+    controller.signal.addEventListener('abort',()=>runControl.resume(),{once:true});
+    const agentBudget={maxSteps:Number(state.team.maxStepsPerAgent)||8,timeoutMs:(Number(state.team.agentTimeoutMinutes)||10)*60000,maxTokens:Number(state.team.maxTokensPerAgent)||4096,waitIfPaused:()=>runControl.waitIfPaused()};
     const projectMemory=state.memory.filter(item=>item.status==='approved').map(item=>`[${item.category}${item.pinned?' · pinned':''}] ${item.title}: ${item.content}`).join('\n\n');
     const memoryContext=projectMemory?`\n\nSHARED PROJECT MEMORY (follow pinned entries as project instructions):\n${projectMemory}`:'';
     const runButton=document.querySelector(`[data-task-run="${CSS.escape(taskId)}"]`);if(runButton){runButton.disabled=true;runButton.textContent='Running…';}
-    const stopButton=document.createElement('button');stopButton.type='button';stopButton.className='btn small danger';stopButton.textContent='Stop';stopButton.setAttribute('aria-label','Stop this team run');stopButton.addEventListener('click',()=>controller.abort());runButton?.parentElement?.append(stopButton);activeRuns.set(taskId,controller);
+    const pauseButton=document.createElement('button');pauseButton.type='button';pauseButton.className='btn small';pauseButton.textContent='Pause';pauseButton.title='Pause after the current model or tool step';pauseButton.addEventListener('click',()=>{if(runControl.paused){runControl.resume();pauseButton.textContent='Pause';toast('Team run resumed.');}else{runControl.pause();pauseButton.textContent='Resume';toast('Team will pause after the current step.');}});
+    const stopButton=document.createElement('button');stopButton.type='button';stopButton.className='btn small danger';stopButton.textContent='Stop';stopButton.setAttribute('aria-label','Stop this team run');stopButton.addEventListener('click',()=>controller.abort());runButton?.parentElement?.append(pauseButton,stopButton);activeRuns.set(taskId,runControl);
     const activity=async event=>{
       const label=event.type==='agent-message'?`Messaged ${event.to}`:event.type==='tool-start'?`Started ${event.tool}`:event.type==='file-read'?`Read ${event.path}`:event.type==='file-written'?`Wrote ${event.path}`:event.type==='file-lock-waiting'?`Waiting for ${event.mode} lock on ${event.path}`:event.type==='file-lock-acquired'?`Locked ${event.path} for ${event.mode}`:event.type==='file-lock-released'?`Released ${event.path}`:event.type==='memory-proposed'?`Proposed project memory: ${event.title}`:`Finished ${event.tool}`;
       await window.localAI.work.sendMessage({from:event.agentId,to:'team',taskId,body:`${label}${event.args?.path?`: ${event.args.path}`:''}${event.path&&!event.args?.path?`: ${event.path}`:''}${event.result?` — ${event.result}`:''}`}).catch(()=>{});
@@ -138,7 +141,7 @@
       await window.localAI.work.updateTask(taskId,{status:'review',note:summary});
       toast('Implementation pass completed. Review the approved file changes and reviewer report.');
     }catch(error){const cancelled=controller.signal.aborted;await window.localAI.work.updateTask(taskId,{status:cancelled?'cancelled':'failed',note:(cancelled?'Stopped by user.':error.message).slice(0,1000)}).catch(()=>{});toast(cancelled?'Team run stopped.':`Team run failed: ${error.message}`);}
-    finally{activeRuns.delete(taskId);stopButton.remove();if(runButton){runButton.disabled=false;runButton.textContent='Run team';}}
+    finally{activeRuns.delete(taskId);pauseButton.remove();stopButton.remove();if(runButton){runButton.disabled=false;runButton.textContent='Run team';}}
     await refresh();
   }
   async function messageTask(taskId){
