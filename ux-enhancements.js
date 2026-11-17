@@ -79,6 +79,29 @@
     else if (event.key === 'Enter' && visible[selected]) { event.preventDefault(); run(visible[selected]); }
   });
   dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+  const settingsSearch = document.getElementById('settingsSearch');
+  if (settingsSearch) {
+    const status = document.getElementById('settingsSearchStatus');
+    const sections = [...document.querySelectorAll('#settingsView .settings-section')];
+    const tabs = [...document.querySelectorAll('#settingsNav [data-settings-section]')];
+    settingsSearch.addEventListener('input', () => {
+      const query = settingsSearch.value.trim().toLowerCase();
+      if (!query) {
+        tabs.forEach(tab => { tab.hidden = false; });
+        if (status) status.textContent = 'Find appearance, layout, language, privacy and data options.';
+        return;
+      }
+      const matches = sections.filter(section => {
+        const content = [section.querySelector('h2')?.textContent, section.querySelector('p')?.textContent, ...[...section.querySelectorAll('label')].map(label => label.textContent)].join(' ').toLowerCase();
+        return content.includes(query);
+      });
+      tabs.forEach(tab => { tab.hidden = !matches.some(section => section.dataset.settingsSection === tab.dataset.settingsSection); });
+      if (status) status.textContent = matches.length ? matches.length + ' matching settings category' + (matches.length === 1 ? '' : 'ies') + '.' : 'No settings categories match that search.';
+      if (matches.length && !matches.some(section => section.classList.contains('active'))) {
+        document.getElementById('settingsTab-' + matches[0].dataset.settingsSection)?.click();
+      }
+    });
+  }
   document.getElementById('commandPaletteOpen')?.addEventListener('click', open);
   document.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
