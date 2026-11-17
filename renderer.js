@@ -722,8 +722,9 @@
     $('connectButton').disabled = true;
     try {
       let data;
+      const endpoint = settings.backend === 'ollama' ? '/api/tags' : settings.backend === 'openrouter' ? '/models' : '/v1/models';
       if(settings.backend==='openrouter') { await ensureServerApproved('https://openrouter.ai/api/v1'); data={data:await window.localAI.openRouter.models()}; }
-      else { const endpoint = settings.backend === 'ollama' ? '/api/tags' : '/v1/models'; data = await apiRequest(baseURL() + endpoint); }
+      else data = await apiRequest(baseURL() + endpoint);
       modelMetadata = settings.backend === 'ollama' ? (data.models || []) : (data.data || []);
       modelNames = settings.backend === 'ollama'
         ? modelMetadata.map(model => model.name).filter(Boolean)
@@ -1640,6 +1641,7 @@
   }
 
   async function streamCompletion({ model, messages, tools, toolFallbackPrompt = '', signal, onDelta, maxTokensOverride, providerOverride }) {
+    const openRouterChatEndpoint=settings.backend === 'openrouter' ? '/chat/completions' : '';
     if(providerOverride==='openrouter') {
       await ensureServerApproved('https://openrouter.ai/api/v1');
       const openMessages=(messages||[]).map(message=>{
