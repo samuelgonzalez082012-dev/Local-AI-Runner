@@ -5,6 +5,24 @@
   let state = null;
   let selectedAgent = 'planner';
   let selectedTask = '';
+  const activeRuns = new Map();
+  function parsePlannerPlan(output, allowedAgentIds) {
+    const source = String(output || '');
+    const start = source.indexOf('{');
+    const end = source.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    try {
+      const parsed = JSON.parse(source.slice(start, end + 1));
+      if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.workstreams)) return null;
+      const allowed = new Set(allowedAgentIds);
+      const workstreams = parsed.workstreams.filter(item => item && allowed.has(item.agentId) && typeof item.objective === 'string' && item.objective.trim()).map(item => ({
+        agentId: item.agentId,
+        objective: item.objective.trim().slice(0, 4000),
+        files: Array.isArray(item.files) ? item.files.filter(file => typeof file === 'string' && file.length <= 500 && !file.startsWith('/') && !file.split(/[\\/]/).includes('..')).slice(0, 80) : []
+      }));
+      return { summary: String(parsed.summary || '').slice(0, 4000), workstreams, risks: Array.isArray(parsed.risks) ? parsed.risks.filter(x => typeof x === 'string').slice(0, 30) : [], verification: Array.isArray(parsed.verification) ? parsed.verification.filter(x => typeof x === 'string').slice(0, 30) : [] };
+    } catch (_) { return null; }
+  }
   const agentDefaults = [
     { id:'planner', name:'Planner', role:'planner', provider:'inherit', model:'', instructions:'Coordinate the team, break work into tasks, and review decisions.', tools:['read','plan','message'], enabled:true },
     { id:'developer-1', name:'Developer 1', role:'developer', provider:'inherit', model:'', instructions:'Implement assigned development tasks within the agreed scope.', tools:['read','write-proposal','message'], enabled:true },
@@ -75,14 +93,18 @@
     if(!window.localAIWorkRunner?.runAgent){toast('The model runner is not available.');return;}
     const agents=state.team.agents.filter(agent=>agent.enabled);
     const planner=agents.find(agent=>agent.role==='planner')||agents[0];
+    if(!planner){toast('Add an enabled agent to the team first.');return;}
     const reviewer=agents.find(agent=>agent.role==='reviewer');
     const developers=agents.filter(agent=>agent.id!==planner.id&&agent.id!==reviewer?.id&&((agent.tools||[]).includes('read')||(agent.tools||[]).includes('write-proposal')));
-    if(!planner){toast('Add an enabled agent to the team first.');return;}
     if(!developers.length){toast('Enable at least one additional agent with read permission to participate in a team task; write-proposal permission allows approved file changes.');return;}
+    const taskAssignee=agents.find(agent=>agent.id===task.assignedTo);
+    if(taskAssignee&&taskAssignee.id!==planner.id&&taskAssignee.id!==reviewer?.id&&!developers.some(agent=>agent.id===taskAssignee.id)){toast('The selected task owner does not have permission to participate in implementation.');return;}
+    if(taskAssignee&&developers.some(agent=>agent.id===taskAssignee.id))developers.sort((a,b)=>a.id===taskAssignee.id?-1:b.id===taskAssignee.id?1:0);
     const controller=new AbortController();
-    const projectMemory=state.memory.map(item=>`[${item.category}${item.pinned?' · pinned':''}] ${item.title}: ${item.content}`).join('\n\n');
+    const projectMemory=state.memory.filter(item=>item.status==='approved').map(item=>`[${item.category}${item.pinned?' · pinned':''}] ${item.title}: ${item.content}`).join('\n\n');
     const memoryContext=projectMemory?`\n\nSHARED PROJECT MEMORY (follow pinned entries as project instructions):\n${projectMemory}`:'';
     const runButton=document.querySelector(`[data-task-run="${CSS.escape(taskId)}"]`);if(runButton){runButton.disabled=true;runButton.textContent='Running…';}
+    const stopButton=document.createElement('button');stopButton.type='button';stopButton.className='btn small danger';stopButton.textContent='Stop';stopButton.setAttribute('aria-label','Stop this team run');stopButton.addEventListener('click',()=>controller.abort());runButton?.parentElement?.append(stopButton);activeRuns.set(taskId,controller);
     const activity=async event=>{
       const label=event.type==='agent-message'?`Messaged ${event.to}`:event.type==='tool-start'?`Started ${event.tool}`:event.type==='file-read'?`Read ${event.path}`:event.type==='file-written'?`Wrote ${event.path}`:event.type==='file-lock-waiting'?`Waiting for ${event.mode} lock on ${event.path}`:event.type==='file-lock-acquired'?`Locked ${event.path} for ${event.mode}`:event.type==='file-lock-released'?`Released ${event.path}`:event.type==='memory-proposed'?`Proposed project memory: ${event.title}`:`Finished ${event.tool}`;
       await window.localAI.work.sendMessage({from:event.agentId,to:'team',taskId,body:`${label}${event.args?.path?`: ${event.args.path}`:''}${event.path&&!event.args?.path?`: ${event.path}`:''}${event.result?` — ${event.result}`:''}`}).catch(()=>{});
@@ -90,10 +112,11 @@
     };
     try{
       await window.localAI.work.updateTask(taskId,{status:'planning',note:'Planner is preparing an implementation plan.'});await refresh();
-      const plannerOutput=await window.localAIWorkRunner.runAgent({agent:planner,prompt:`Create an implementation plan and divide it into independent workstreams for these team members: ${developers.map(agent=>`${agent.id} (${agent.name})`).join(', ')}. Inspect the workspace first if needed. Do not edit files during planning. Return ONLY valid JSON with this shape: {\"summary\":\"...\",\"workstreams\":[{\"agentId\":\"developer-1\",\"objective\":\"...\",\"files\":[\"relative/path\"]}],\"risks\":[\"...\"],\"verification\":[\"...\"]}. Give each developer a distinct objective and avoid assigning the same file to multiple developers.\n\nTASK: ${task.title}\nINSTRUCTIONS: ${task.description}${memoryContext}`,signal:controller.signal,onActivity:activity,taskId});
-      let planData=null;try{const match=plannerOutput.match(/\\{[\\s\\S]*\\}/);if(match)planData=JSON.parse(match[0]);}catch(_){}
+      const plannerOutput=await window.localAIWorkRunner.runAgent({agent:planner,prompt:`Create an implementation plan and divide it into independent workstreams for these team members: ${developers.map(agent=>`${agent.id} (${agent.name})`).join(', ')}. The task was assigned to ${taskAssignee?.name||'the Planner'}. In hybrid mode, treat that person as the primary owner and delegate only independent supporting work; in planner-led mode, choose the best distribution while keeping the assigned owner responsible for the outcome. Inspect the workspace first if needed. Do not edit files during planning. Return ONLY valid JSON with this shape: {\"summary\":\"...\",\"workstreams\":[{\"agentId\":\"developer-1\",\"objective\":\"...\",\"files\":[\"relative/path\"]}],\"risks\":[\"...\"],\"verification\":[\"...\"]}. Give each developer a distinct objective and avoid assigning the same file to multiple developers.\n\nTASK: ${task.title}\nINSTRUCTIONS: ${task.description}${memoryContext}`,signal:controller.signal,onActivity:activity,taskId});
+      const planData=parsePlannerPlan(plannerOutput,developers.map(agent=>agent.id));
       const plan=planData?JSON.stringify(planData,null,2):plannerOutput;
       await window.localAI.work.sendMessage({from:planner.id,to:'team',taskId,body:`Implementation plan:\n${plan.slice(0,7000)}`});
+      if((state.team.autonomy||'hybrid')==='user-approved'&&!window.confirm(`Approve the Planner's plan for “${task.title}” before implementation?\n\n${String(planData?.summary||plan).slice(0,1800)}`)){await window.localAI.work.updateTask(taskId,{status:'queued',note:'Plan was not approved; no developer work was started.'});toast('Plan not approved. The task remains queued.');return;}
       await window.localAI.work.updateTask(taskId,{status:'in-progress',note:'Developers are implementing the approved task plan. Every file change requires your confirmation.'});await refresh();
       const concurrency=Math.max(1,Math.min(8,Number(state.team.maxConcurrent)||3));
       const queue=developers.slice();const results=[];
@@ -103,13 +126,16 @@
         results.push({agent,result});
         await window.localAI.work.sendMessage({from:agent.id,to:reviewer?.id||'team',taskId,body:result.slice(0,7000)});
       }}
-      await Promise.all(Array.from({length:Math.min(concurrency,developers.length)},()=>worker()));
+      const workerOutcomes=await Promise.allSettled(Array.from({length:Math.min(concurrency,developers.length)},()=>worker()));
+      const workerFailure=workerOutcomes.find(outcome=>outcome.status==='rejected');
+      if(workerFailure)throw workerFailure.reason;
       let review='';
       if(reviewer){review=await window.localAIWorkRunner.runAgent({agent:reviewer,prompt:`Review the actual workspace after the developer implementation. Read the changed files and assess correctness, consistency with the plan, likely regressions, missing tests and acceptance criteria. Do not edit files. Clearly distinguish verified changes from claims in developer reports.\n\nTASK: ${task.title}\nPLAN:\n${plan}\n\nDEVELOPER REPORTS:\n${results.map(item=>`${item.agent.name}:\n${item.result}`).join('\n\n')}${memoryContext}`,signal:controller.signal,onActivity:activity,taskId});await window.localAI.work.sendMessage({from:reviewer.id,to:'team',taskId,body:`Review:\n${review.slice(0,7000)}`});}
       const summary=`Implementation pass completed. ${results.length} developer workstream(s) ran. ${reviewer?'Reviewer completed a read-only review.':'No Reviewer is enabled; review remains outstanding.'} Inspect the approved file changes and reviewer notes before marking this task complete.`;
       await window.localAI.work.updateTask(taskId,{status:'review',note:summary});
       toast('Implementation pass completed. Review the approved file changes and reviewer report.');
-    }catch(error){await window.localAI.work.updateTask(taskId,{status:'failed',note:error.message.slice(0,1000)}).catch(()=>{});toast(`Team run failed: ${error.message}`);}
+    }catch(error){const cancelled=controller.signal.aborted;await window.localAI.work.updateTask(taskId,{status:cancelled?'cancelled':'failed',note:(cancelled?'Stopped by user.':error.message).slice(0,1000)}).catch(()=>{});toast(cancelled?'Team run stopped.':`Team run failed: ${error.message}`);}
+    finally{activeRuns.delete(taskId);stopButton.remove();if(runButton){runButton.disabled=false;runButton.textContent='Run team';}}
     await refresh();
   }
   async function messageTask(taskId){
