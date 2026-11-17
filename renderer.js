@@ -3028,7 +3028,7 @@
   function applyLocalization(){
     const labels=TRANSLATIONS[settings.uiLanguage]||TRANSLATIONS.en;
     document.querySelectorAll('#chatbar [data-view]').forEach(button=>{
-      const label=button.querySelector('span:nth-child(2)');if(label)label.textContent=labels[button.dataset.view]||TRANSLATIONS.en[button.dataset.view];
+      const label=button.querySelector('span:nth-child(2)');if(label)label.textContent=labels[button.dataset.view]||TRANSLATIONS.en[button.dataset.view]||label.textContent;
     });
     const newChatLabel=$('newChatLabel');if(newChatLabel)newChatLabel.textContent=t('newChat');
     if($('viewTitle'))$('viewTitle').textContent=t(activeView);
