@@ -2308,7 +2308,7 @@
 
 
   // ---------- navigation and local workspaces ----------
-  const VIEW_TITLES={chat:'Chats',projects:'Projects',work:'Work',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
+  const VIEW_TITLES={chat:'Chats',projects:'Projects',work:'Work Manager',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
   window.addEventListener('work-manager:open-browser',()=>navigate('browser'));
   function navigate(view){
     if(!VIEW_TITLES[view])return;
