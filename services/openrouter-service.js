@@ -22,7 +22,7 @@ function createOpenRouterService({ safeStorage, fs, path, userData }) {
   }
   async function request(endpoint, options = {}) {
     const key = await getKey();
-    if (!key) throw new Error('Add an OpenRouter API key in Team settings first.');
+    if (!key) throw new Error('An OpenRouter API key is required. Add it in Connections.');
     const timeout = AbortSignal.timeout(120000);
     const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
     let response;
