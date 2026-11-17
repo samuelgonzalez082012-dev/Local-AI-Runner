@@ -2477,7 +2477,7 @@
       const meta=modelMetadata.find(entry=>(entry.name||entry.id)===model)||{};
       const info=capabilities.get(model);
       const estimatedBytes=Number.isFinite(meta.size)&&meta.size>0?meta.size*1.2:null;
-      const memoryNote=estimatedBytes&&Number.isFinite(systemAvailableMemoryBytes)?`Estimated runtime memory ~${formatBytes(estimatedBytes)} · system RAM available ${formatBytes(systemAvailableMemoryBytes)} (rough estimate; VRAM is not included)`:'Hardware fit unavailable until system memory is sampled';
+      const memoryNote=settings.backend==='openrouter'?'Hosted model; local RAM and VRAM requirements do not apply.':estimatedBytes&&Number.isFinite(systemAvailableMemoryBytes)?`Estimated runtime memory ~${formatBytes(estimatedBytes)} · system RAM available ${formatBytes(systemAvailableMemoryBytes)} (rough estimate; VRAM is not included)`:'Hardware fit unavailable until system memory is sampled';
       const providerMeta=settings.backend==='openrouter'?`<span>Context ${meta.context_length?Number(meta.context_length).toLocaleString():'Unknown'}</span><span>Input ${formatOpenRouterPrice(meta.pricing?.prompt)}</span><span>Output ${formatOpenRouterPrice(meta.pricing?.completion)}</span>`:'';
       const card=document.createElement('article');card.className='model-card';
       card.innerHTML=`<div class="card-icon">◈</div><h3>${escapeHTML(model)}</h3><p>${escapeHTML(meta.details?.family||meta.owned_by||meta.name||t('localModel'))}</p><div class="card-meta"><span>${meta.size?`${(meta.size/1e9).toFixed(1)} GB`:settings.backend==='openrouter'?'Hosted model':t('sizeUnavailable')}</span><span>${info?.vision?escapeHTML(t('vision')):''}</span><span>${info?.thinking?escapeHTML(t('thinking')):''}</span><span>${info?.tools?escapeHTML(t('tools')):''}</span>${providerMeta}</div><p class="model-hardware-note">${escapeHTML(memoryNote)}</p><label class="check-field"><input type="checkbox" data-model-bench="${escapeHTML(model)}" ${benchmarkSelected.has(model)?'checked':''}><span><strong>${escapeHTML(t('includeComparison'))}</strong></span></label><button class="btn full" data-use-model="${escapeHTML(model)}">${escapeHTML(t('useModel'))}</button>`;
@@ -3124,7 +3124,7 @@
     };
 
     on('backend', 'change', event => {
-      settings.backend = ['openai','openrouter','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
+      settings.backend = ['openai','openrouter','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';updateModelPullAvailability();
       settings.baseUrl = URL_DEFAULTS[settings.backend];
       $('baseUrl').value = settings.baseUrl;
       approvedModelServer = '';
@@ -3359,6 +3359,8 @@
     on('modelsRefresh','click',async()=>{await loadModels();renderModelCatalog();});
     on('browseOllamaLibrary','click',async()=>{try{navigate('browser');await window.localAI.browser.navigate('https://ollama.com/library');}catch(error){toast('Could not open the Ollama model library: '+error.message);}});
     on('openEditorWindow','click',()=>window.localAI.editor.openWindow());
+    const updateModelPullAvailability=()=>{const local=settings.backend==='ollama';$('pullModelButton').disabled=!local;$('ollamaPullModel').disabled=!local;$('modelPullStatus').textContent=local?'Download a model directly into your connected Ollama server.':'Model downloads require Ollama. Select Ollama in Connections to enable downloads.';};
+    updateModelPullAvailability();
     on('modelPullForm','submit',async event=>{
       event.preventDefault();
       const input=$('ollamaPullModel'),button=$('pullModelButton'),name=String(input?.value||'').trim();
