@@ -1642,7 +1642,7 @@
 
   async function streamCompletion({ model, messages, tools, toolFallbackPrompt = '', signal, onDelta, maxTokensOverride, providerOverride }) {
     const openRouterChatEndpoint=settings.backend === 'openrouter' ? '/chat/completions' : '';
-    if(providerOverride==='openrouter') {
+    if((providerOverride||settings.backend)==='openrouter') {
       await ensureServerApproved('https://openrouter.ai/api/v1');
       const openMessages=(messages||[]).map(message=>{
         if(message.images?.length)throw new Error('OpenRouter image input is not enabled in this local-first build.');
@@ -1900,6 +1900,7 @@
   }
   window.localAIWorkRunner = Object.freeze({
     listModels() { return { provider: settings.backend, models: modelNames.slice(), defaultModel: settings.model || '' }; },
+    async listProviderModels(provider) { if(provider==='openrouter'){await ensureServerApproved('https://openrouter.ai/api/v1');return await window.localAI.openRouter.models();} return modelNames.slice(); },
     async runAgent({ agent, prompt, signal, onActivity, taskId, maxSteps = 8, timeoutMs = 600000, maxTokens = 4096 }) {
       const timeoutSignal=Number(timeoutMs)>0?AbortSignal.timeout(Math.max(1000,Math.min(7200000,Number(timeoutMs)))):null;
       const runSignal=signal&&timeoutSignal?AbortSignal.any([signal,timeoutSignal]):signal||timeoutSignal||new AbortController().signal;
@@ -3142,6 +3143,9 @@
       loadModels();
     });
     on('connectButton', 'click', loadModels);
+    on('saveOpenRouterKey','click',async()=>{const key=$('openRouterApiKey').value.trim();if(!key){toast('Enter an OpenRouter API key first.');return;}try{await window.localAI.openRouter.setKey(key);$('openRouterApiKey').value='';$('openRouterConnectionStatus').textContent='OpenRouter key stored securely.';toast('OpenRouter key saved securely.');}catch(error){$('openRouterConnectionStatus').textContent=error.message;toast(error.message);}});
+    on('testOpenRouter','click',async()=>{try{await ensureServerApproved('https://openrouter.ai/api/v1');const models=await window.localAI.openRouter.models();$('openRouterConnectionStatus').textContent='Connected. '+models.length+' hosted models available. Model usage may incur charges.';}catch(error){$('openRouterConnectionStatus').textContent=error.message;toast(error.message);}});
+    on('clearOpenRouterKey','click',async()=>{try{await window.localAI.openRouter.setKey('');$('openRouterConnectionStatus').textContent='OpenRouter key cleared.';toast('OpenRouter key cleared.');}catch(error){toast(error.message);}});
     on('system', 'input', event => setSetting('system', event.target.value));
     on('chatSystem', 'input', event => {
       const chat = current();
@@ -3485,6 +3489,7 @@
     loadSpeechVoices();
     if(benchmarkHistory.length){const latest=benchmarkHistory[0];$('benchmarkResults').innerHTML=(latest.results||[]).map(result=>`<div class="benchmark-row"><strong>${escapeHTML(result.model)}</strong><span>${result.tps?`${result.tps.toFixed(1)} tok/s`:`${result.elapsed.toFixed(1)}s`}</span><span>${escapeHTML(result.error||result.preview||'')}</span></div>`).join('');}
     await Promise.all([loadModels(),refreshWorkspaceInfo(),renderConnectors()]);
+    try{const openStatus=await window.localAI.openRouter.status();$('openRouterConnectionStatus').textContent=openStatus.connected?'OpenRouter key is stored securely.':'No OpenRouter key saved. Local Ollama does not require one.';}catch(error){$('openRouterConnectionStatus').textContent='OpenRouter status unavailable: '+error.message;}
     renderModelCatalog();
     renderToolManagement();renderToolAudit();
     refreshRuntime();
