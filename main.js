@@ -128,7 +128,7 @@ function normalizeModelRequest(options) {
   if (!['http:','https:'].includes(url.protocol)) throw new Error('Only HTTP and HTTPS model servers are supported.');
   if (url.search || url.hash) throw new Error('Model server endpoints cannot contain query strings or fragments.');
   if (url.protocol === 'http:' && !isLocalHost(url.hostname)) throw new Error('Remote model servers must use HTTPS. HTTP is only allowed for localhost.');
-  const allowedPath = /^\/(api\/(tags|show|chat|ps)|v1\/(models|chat\/completions|messages))\/?$/;
+  const allowedPath = /^\/(api\/(tags|show|chat|ps|pull)|v1\/(models|chat\/completions|messages))\/?$/;
   const openRouterApiPath = /^\/api\/v1\/(models|chat\/completions)$/;
   if (!allowedPath.test(url.pathname) && !(url.origin === 'https://openrouter.ai' && openRouterApiPath.test(url.pathname))) throw new Error('This endpoint is not part of the supported model-server API.');
   const origin = url.origin;
