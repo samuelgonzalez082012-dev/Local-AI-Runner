@@ -42,7 +42,16 @@
   }
   function renderActivity() {
     const list=byId('workActivityList'); if(!list||!state)return;
-    list.innerHTML=state.activity.length?state.activity.slice(0,24).map(item=>`<div class="work-activity-item"><i></i><span><strong>${escapeHtml(item.type.replace(/-/g,' '))}</strong><small>${escapeHtml(item.title||item.file||item.name||item.agentId||item.project||'Work Manager')} · ${time(item.at)}</small></span></div>`).join(''):'<p class="muted-text">No activity yet.</p>';
+    const filtered=(state.activity||[]).filter(item=>{
+      if(activityFilter==='all')return true;
+      const type=String(item.type||'').toLowerCase();
+      if(activityFilter==='agent')return /agent|message|run|review/.test(type);
+      if(activityFilter==='task')return /task/.test(type);
+      if(activityFilter==='file')return /file|write|read|lock/.test(type);
+      if(activityFilter==='memory')return /memory/.test(type);
+      return true;
+    });
+    list.innerHTML=filtered.length?filtered.slice(0,60).map(item=>`<div class="work-activity-item"><i></i><span><strong>${escapeHtml(String(item.type||'activity').replace(/-/g,' '))}</strong><small>${escapeHtml(item.title||item.file||item.name||item.agentId||item.project||'Work Manager')} · ${time(item.at)}</small></span></div>`).join(''):'<p class="muted-text">No matching activity yet.</p>';
   }
   function renderMemory() {
     const list=byId('workMemoryList'); if(!list||!state)return;
