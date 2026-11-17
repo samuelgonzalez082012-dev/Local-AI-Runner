@@ -55,3 +55,5 @@ jobs:
               });
             }
             if (failed) core.setFailed('Automated tests failed. See this check run summary for the test output.');
+      - name: Run Electron browser smoke test
+        run: xvfb-run -a npx electron --no-sandbox --disable-gpu scripts/browser-smoke.js
