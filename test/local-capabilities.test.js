@@ -5,40 +5,38 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer.js'), 'utf8');
+const root = path.join(__dirname, '..');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+const renderer = read('renderer.js');
 
-test('exposes local project, memory, workflow and task tools through the validated registry', () => {
-  for (const name of [
-    'list_local_projects', 'create_local_project',
-    'list_local_memories', 'save_local_memory', 'delete_local_memory',
-    'list_local_tasks', 'list_reusable_workflows', 'create_reusable_workflow',
-    'create_local_task', 'run_saved_workflow'
-  ]) {
-    assert.match(renderer, new RegExp(`name:\\s*'${name}'`));
+test('projects, memories, workflows and tasks persist in local collections', () => {
+  for (const collection of ['projects', 'memories', 'workflows', 'tasks']) {
+    assert.ok(renderer.includes(`saveCollection('${collection}'`), `missing local persistence for ${collection}`);
   }
-  assert.match(renderer, /const safeArgs=await window\.localAI\.tools\.validate\(name,args\|\|\{\}\)/);
+  assert.match(renderer, /async function saveCollection\(key,value\)/);
 });
 
-test('persistent local operations require confirmation and save before reporting success', () => {
-  assert.match(renderer, /title: 'Save local memory\?'/);
-  assert.match(renderer, /title: 'Create local project\?'/);
-  assert.match(renderer, /title: 'Save reusable workflow\?'/);
-  assert.match(renderer, /title: runAt \? 'Schedule local task\?' : args\.start_after_response \? 'Run local task after this response\?' : 'Save local task\?'/);
-  assert.match(renderer, /await database\.set\('memories', next\);\s*memories = next;/);
-  assert.match(renderer, /await database\.set\('workflows', next\);\s*workflows = next;/);
-  assert.match(renderer, /await database\.set\('tasks', next\);\s*tasks = next;/);
+test('scheduled local tasks wait until active model runs have released the run slot', () => {
+  assert.match(renderer, /async function processScheduledTasks\(\)/);
+  assert.match(renderer, /if \(running\.size\) return;/);
+  assert.match(renderer, /task\.status==='scheduled'&&task\.due&&task\.due<=Date\.now\(\)/);
+  assert.match(renderer, /await runTask\(task,\{showConversation:false\}\)/);
 });
 
-test('model-started tasks are deferred until the current response has released its run slot', () => {
-  assert.match(renderer, /if \(args\.start_after_response\) queuedAgentTaskRuns\.push\(task\.id\)/);
-  assert.match(renderer, /if \(running\.size === 0 && queuedAgentTaskRuns\.length\)/);
-  assert.match(renderer, /async function drainQueuedAgentTasks\(\)/);
-  assert.match(renderer, /if\(drainingAgentTaskRuns\|\|running\.size\)return/);
+test('workspace search is exposed through trusted IPC and has bounded traversal', () => {
+  const preload = read('preload.js');
+  const main = read('main.js');
+  const workspace = read('services/workspace-service.js');
+  assert.match(preload, /search\(query, relativePath\) \{ return ipcRenderer\.invoke\('workspace:search'/);
+  assert.match(main, /ipcMain\.handle\('workspace:search', async \(event,payload\) => \{ assertTrustedRenderer\(event\)/);
+  assert.match(workspace, /visited >= 3000/);
+  assert.match(workspace, /results\.length >= 40/);
 });
 
-test('web search uses the visible approved browser and treats result text as untrusted', () => {
-  assert.match(renderer, /defineBrowserTool\('search_web'/);
-  assert.match(renderer, /https:\/\/html\.duckduckgo\.com\/html\//);
-  assert.match(renderer, /await browserCall\('navigate', \{ url: url\.href \}\)/);
-  assert.match(renderer, /return untrusted\(results,/);
+test('browser integration is routed through the isolated browser API', () => {
+  const preload = read('preload.js');
+  const renderer = read('renderer.js');
+  assert.match(preload, /navigate\(url\) \{ return ipcRenderer\.invoke\('browser:navigate'/);
+  assert.match(preload, /action\(name\) \{ return ipcRenderer\.invoke\('browser:action'/);
+  assert.match(renderer, /window\.localAI\.browser/);
 });
