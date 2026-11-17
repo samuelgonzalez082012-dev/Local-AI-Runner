@@ -19,7 +19,7 @@ function createWorkCoordinator({ app, workspace }) {
   const tasks = new Map();
   const messages = [];
   const activity = [];
-  let team = { id: 'default', name: 'Default development team', agents: DEFAULT_AGENTS.map(agent => ({ ...agent })), autonomy: 'hybrid', maxConcurrent: 3 };
+  let team = { id: 'default', name: 'Default development team', agents: DEFAULT_AGENTS.map(agent => ({ ...agent })), autonomy: 'hybrid', maxConcurrent: 3, maxStepsPerAgent: 8, agentTimeoutMinutes: 10, maxTokensPerAgent: 4096 };
   let teamTemplates = [];
   let memory = [];
   let layout = { panels: ['team', 'inspector', 'graph', 'tasks', 'timeline', 'memory', 'editor', 'browser'], hidden: [], widths: {} };
@@ -51,14 +51,14 @@ function createWorkCoordinator({ app, workspace }) {
     };
   }
   async function load() {
-    team = { id: 'default', name: 'Default development team', agents: DEFAULT_AGENTS.map(agent => ({ ...agent })), autonomy: 'hybrid', maxConcurrent: 3 };
+    team = { id: 'default', name: 'Default development team', agents: DEFAULT_AGENTS.map(agent => ({ ...agent })), autonomy: 'hybrid', maxConcurrent: 3, maxStepsPerAgent: 8, agentTimeoutMinutes: 10, maxTokensPerAgent: 4096 };
     teamTemplates = []; memory = []; tasks.clear(); messages.length = 0; activity.length = 0; locks.clear(); waiters.clear();
     const savedTeam = await loadJson('team', null);
     if (savedTeam?.agents && Array.isArray(savedTeam.agents)) {
       team = { ...savedTeam, agents: savedTeam.agents.map(agent => {
         const builtIn = ['planner','developer-1','developer-2','reviewer'].includes(agent.id);
         return builtIn && Array.isArray(agent.tools) && !agent.tools.includes('memory-propose') ? { ...agent, tools: [...agent.tools, 'memory-propose'] } : agent;
-      }) };
+      }), maxStepsPerAgent: Math.max(1, Math.min(40, Number(savedTeam.maxStepsPerAgent) || 8)), agentTimeoutMinutes: Math.max(1, Math.min(120, Number(savedTeam.agentTimeoutMinutes) || 10)), maxTokensPerAgent: Math.max(256, Math.min(16000, Number(savedTeam.maxTokensPerAgent) || 4096)) };
     }
     teamTemplates = await loadJson('teams', []);
     memory = await loadJson('memory', []);
@@ -79,7 +79,7 @@ function createWorkCoordinator({ app, workspace }) {
     if (!value || !Array.isArray(value.agents) || value.agents.length < 1 || value.agents.length > 16) throw new Error('A team must contain between 1 and 16 agents.');
     const agents = value.agents.map(validateAgent);
     if (new Set(agents.map(agent => agent.id)).size !== agents.length) throw new Error('Agent IDs must be unique.');
-    team = { id: cleanText(value.id, 64) || crypto.randomUUID(), name: cleanText(value.name, 100) || 'Development team', agents, autonomy: ['planner-led', 'hybrid', 'user-approved'].includes(value.autonomy) ? value.autonomy : 'hybrid', maxConcurrent: Math.max(1, Math.min(8, Number(value.maxConcurrent) || 3)), updatedAt: Date.now() };
+    team = { id: cleanText(value.id, 64) || crypto.randomUUID(), name: cleanText(value.name, 100) || 'Development team', agents, autonomy: ['planner-led', 'hybrid', 'user-approved'].includes(value.autonomy) ? value.autonomy : 'hybrid', maxConcurrent: Math.max(1, Math.min(8, Number(value.maxConcurrent) || 3)), maxStepsPerAgent: Math.max(1, Math.min(40, Number(value.maxStepsPerAgent) || 8)), agentTimeoutMinutes: Math.max(1, Math.min(120, Number(value.agentTimeoutMinutes) || 10)), maxTokensPerAgent: Math.max(256, Math.min(16000, Number(value.maxTokensPerAgent) || 4096)), updatedAt: Date.now() };
     await saveJson('team', team); record('team-updated', { name: team.name }); return structuredClone(team);
   }
   async function saveTemplate(name) {
