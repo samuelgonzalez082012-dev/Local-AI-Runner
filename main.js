@@ -9,6 +9,7 @@ const { createMcpService } = require('./services/mcp-service');
 const { createBrowserService } = require('./services/browser-service');
 const { atomicWriteFile } = require('./services/atomic-file');
 const { createToolRegistry } = require('./services/tool-registry');
+const { createWorkCoordinator } = require('./services/work-coordinator');
 
 // Preserve the user-data directory created by the original repository package.
 // This keeps existing IndexedDB chats, credentials, workspace selection and MCP settings.
@@ -24,6 +25,8 @@ let workspace = null;
 let connectors = null;
 let browser = null;
 let toolRegistry = null;
+let workCoordinator = null;
+let workFileWritesEnabled = false;
 const activeStreams = new Map();
 const approvedModelOrigins = new Set();
 const editorWindows = new Set();
@@ -60,16 +63,6 @@ function trustedEditorTargets(exceptId = null) {
   return targets;
 }
 async function configureEditorBridge() {
-  ipcMain.on('editor:ai-request', (event, prompt) => {
-    try {
-      assertTrustedRenderer(event);
-      const text = String(prompt || '').trim();
-      if (!text || text.length > 30000) return;
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('editor:ai-request', text);
-    } catch (error) {
-      console.warn('Rejected editor AI request:', error.message);
-    }
-  });
   ipcMain.handle('editor:sync:get', event => {
     assertTrustedRenderer(event);
     return { ...editorSharedState, preferences: { ...editorPreferences } };
@@ -133,7 +126,7 @@ function normalizeModelRequest(options) {
   if (!['http:','https:'].includes(url.protocol)) throw new Error('Only HTTP and HTTPS model servers are supported.');
   if (url.search || url.hash) throw new Error('Model server endpoints cannot contain query strings or fragments.');
   if (url.protocol === 'http:' && !isLocalHost(url.hostname)) throw new Error('Remote model servers must use HTTPS. HTTP is only allowed for localhost.');
-  const allowedPath = /^\/(api\/(tags|show|chat|ps)|v1\/(models|chat\/completions|messages)|api\/v1\/(models|chat\/completions))\/?$/;
+  const allowedPath = /^\/(api\/(tags|show|chat|ps)|v1\/(models|chat\/completions|messages))\/?$/;
   if (!allowedPath.test(url.pathname)) throw new Error('This endpoint is not part of the supported model-server API.');
   const origin = url.origin;
   if (!isLocalHost(url.hostname) && !approvedModelOrigins.has(origin)) throw new Error('This remote model server has not been approved in this session.');
@@ -143,7 +136,7 @@ function normalizeModelRequest(options) {
   const headers = {};
   for (const [name,value] of Object.entries(options.headers || {})) {
     const key = name.toLowerCase();
-    if (['content-type','authorization','accept','x-api-key','anthropic-version','x-title'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
+    if (['content-type','authorization','accept','x-api-key','anthropic-version'].includes(key) && typeof value === 'string') headers[key] = value.slice(0,4096);
   }
   const body = options.body == null ? undefined : String(options.body);
   if (method === 'GET' && body) throw new Error('GET model requests cannot include a body.');
@@ -353,8 +346,8 @@ function configureDocuments() {
 }
 function configureWorkspace() {
   workspace = createWorkspaceService({ dialog, app });
-  ipcMain.handle('workspace:choose', async (event, title) => { assertTrustedRenderer(event); return workspace.choose(mainWindow, typeof title === 'string' ? title.slice(0, 120) : undefined); });
-  ipcMain.handle('workspace:set-folder', async (event, folderPath) => { assertTrustedRenderer(event); return workspace.setFolder(folderPath); });
+  ipcMain.handle('workspace:choose', async (event, title) => { assertTrustedRenderer(event); const result = await workspace.choose(mainWindow, typeof title === 'string' ? title.slice(0, 120) : undefined); if (result) await workCoordinator?.load(); return result; });
+  ipcMain.handle('workspace:set-folder', async (event, folderPath) => { assertTrustedRenderer(event); const result = await workspace.setFolder(folderPath); await workCoordinator?.load(); return result; });
   ipcMain.handle('workspace:import', async event => { assertTrustedRenderer(event); return workspace.importFiles(mainWindow); });
   ipcMain.handle('workspace:info', event => { assertTrustedRenderer(event); return workspace.getInfo(); });
   ipcMain.handle('workspace:list', async (event,relativePath) => { assertTrustedRenderer(event); return workspace.list(relativePath); });
@@ -404,6 +397,47 @@ function configureWorkspace() {
     return workspace.restoreBackup(String(id));
   });
 }
+function configureWorkManager() {
+  workCoordinator = createWorkCoordinator({ app, workspace });
+  const handlers = {
+    'work:state': () => workCoordinator.getState(),
+    'work:file-writes:set-enabled': value => { workFileWritesEnabled = value === true; return workFileWritesEnabled; },
+    'work:team:save': payload => workCoordinator.saveTeam(payload),
+    'work:team:save-template': name => workCoordinator.saveTemplate(name),
+    'work:team:load-template': id => workCoordinator.loadTemplate(String(id || '')),
+    'work:memory:add': payload => workCoordinator.addMemory(payload),
+    'work:memory:propose': (payload, agentId) => workCoordinator.proposeMemory(payload || {}, String(agentId || '')),
+    'work:memory:approve': id => workCoordinator.approveMemory(String(id || '')),
+    'work:memory:update': (id, patch) => workCoordinator.updateMemory(String(id || ''), patch || {}),
+    'work:memory:remove': id => workCoordinator.removeMemory(String(id || '')),
+    'work:layout:set': payload => workCoordinator.setLayout(payload || {}),
+    'work:task:create': payload => workCoordinator.createTask(payload || {}),
+    'work:task:update': (id, patch) => workCoordinator.updateTask(String(id || ''), patch || {}),
+    'work:message:send': payload => workCoordinator.sendMessage(payload || {}),
+    'work:message:list': (agentId, taskId) => workCoordinator.getMessages(String(agentId || ''), String(taskId || '')),
+    'work:lock:acquire': payload => workCoordinator.acquireLock(payload || {}),
+    'work:lock:release': id => workCoordinator.releaseLock(String(id || '')),
+    'work:lock:cancel-request': id => workCoordinator.cancelLockRequest(String(id || '')),
+    'work:lock:renew': id => workCoordinator.renewLock(String(id || '')),
+    'work:workspace:write': async payload => {
+      if (!workFileWritesEnabled) throw new Error('Agent file writes are disabled in Connections settings.');
+      const relativePath = String(payload?.path || '').slice(0, 500);
+      const lock = workCoordinator.getState().locks.find(item => item.id === String(payload?.lockId || '') && item.file === relativePath && item.agentId === String(payload?.agentId || '') && item.mode === 'write');
+      if (!lock) throw new Error('A valid exclusive write lock is required before an agent can modify this file.');
+      const content = String(payload?.content ?? '');
+      const preview = await workspace.previewWrite(relativePath, content);
+      const answer = await dialog.showMessageBox(mainWindow, { type:'warning', buttons:['Approve agent file change','Cancel'], cancelId:1, defaultId:1, title:'Review agent file change', message:`Allow ${lock.agentId} to modify ${relativePath}?`, detail:`${preview.diff}\n\nThe existing file will be backed up. You can cancel without changing it.` });
+      if (answer.response !== 0) throw new Error('Agent file change cancelled by the user.');
+      const stillLocked = workCoordinator.getState().locks.some(item => item.id === lock.id && item.file === relativePath && item.agentId === lock.agentId && item.mode === 'write');
+      if (!stillLocked) throw new Error('The exclusive file lock expired before approval. No file was changed. Retry the write.');
+      const current = await workspace.previewWrite(relativePath, content);
+      if (current.oldHash !== preview.oldHash) throw new Error('The file changed while the approval dialog was open. No file was changed; reread it and retry.');
+      return workspace.write(relativePath, content);
+    }
+  };
+  for (const [channel, handler] of Object.entries(handlers)) ipcMain.handle(channel, (event, ...args) => { assertTrustedRenderer(event); return handler(...args); });
+}
+
 function configureToolRegistry() {
   toolRegistry = createToolRegistry({ app });
   ipcMain.handle('tools:register', (event, definitions) => {
@@ -501,7 +535,7 @@ function configureScreenCapture() {
 function createEditorWindow() {
   const editorWindow = new BrowserWindow({width:1320,height:900,minWidth:760,minHeight:520,backgroundColor:'#0d1118',show:false,title:'Local AI Runner — Code Editor',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   editorWindows.add(editorWindow.webContents.id);
-  editorWindow.once('ready-to-show',()=>{editorWindow.maximize();editorWindow.show();});
+  editorWindow.once('ready-to-show',()=>editorWindow.show());
   editorWindow.on('closed',()=>editorWindows.delete(editorWindow.webContents.id));
   editorWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   editorWindow.loadFile(path.join(__dirname,'editor.html'));
@@ -531,12 +565,14 @@ app.whenReady().then(async()=>{
   configureWorkspace();
   configureToolRegistry();
   await toolRegistry.load();
+  configureWorkManager();
   await configureEditorBridge();
   ipcMain.handle('editor:open-window',event=>{assertTrustedRenderer(event);return createEditorWindow();});
   configureConnectors();
   configureBrowser();
   configureScreenCapture();
   await Promise.all([workspace.load(), connectors.load()]);
+  await workCoordinator.load();
   createWindow();
   app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)createWindow();});
 }).catch(error=>{console.error('Application startup failed:',error);app.quit();});

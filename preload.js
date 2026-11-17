@@ -46,9 +46,29 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     onSync(callback) { return subscribe('editor:sync:update', callback); },
     getPreferences() { return ipcRenderer.invoke('editor:preferences:get'); },
     setPreferences(value) { return ipcRenderer.invoke('editor:preferences:set', value); },
-    onPreferences(callback) { return subscribe('editor:preferences:update', callback); },
-    askAI(prompt) { ipcRenderer.send('editor:ai-request', String(prompt || '').slice(0, 30000)); },
-    onAIRequest(callback) { return subscribe('editor:ai-request', callback); }
+    onPreferences(callback) { return subscribe('editor:preferences:update', callback); }
+  }),
+  work: Object.freeze({
+    state() { return ipcRenderer.invoke('work:state'); },
+    setFileWritesEnabled(value) { return ipcRenderer.invoke('work:file-writes:set-enabled', value === true); },
+    saveTeam(payload) { return ipcRenderer.invoke('work:team:save', payload); },
+    saveTemplate(name) { return ipcRenderer.invoke('work:team:save-template', String(name || '')); },
+    loadTemplate(id) { return ipcRenderer.invoke('work:team:load-template', String(id || '')); },
+    addMemory(payload) { return ipcRenderer.invoke('work:memory:add', payload); },
+    proposeMemory(payload, agentId) { return ipcRenderer.invoke('work:memory:propose', payload, String(agentId || '')); },
+    approveMemory(id) { return ipcRenderer.invoke('work:memory:approve', String(id || '')); },
+    updateMemory(id, patch) { return ipcRenderer.invoke('work:memory:update', String(id || ''), patch || {}); },
+    removeMemory(id) { return ipcRenderer.invoke('work:memory:remove', String(id || '')); },
+    setLayout(payload) { return ipcRenderer.invoke('work:layout:set', payload); },
+    createTask(payload) { return ipcRenderer.invoke('work:task:create', payload); },
+    updateTask(id, patch) { return ipcRenderer.invoke('work:task:update', String(id || ''), patch || {}); },
+    sendMessage(payload) { return ipcRenderer.invoke('work:message:send', payload); },
+    messages(agentId, taskId) { return ipcRenderer.invoke('work:message:list', String(agentId || ''), String(taskId || '')); },
+    acquireLock(payload) { return ipcRenderer.invoke('work:lock:acquire', payload); },
+    releaseLock(id) { return ipcRenderer.invoke('work:lock:release', String(id || '')); },
+    cancelLockRequest(id) { return ipcRenderer.invoke('work:lock:cancel-request', String(id || '')); },
+    renewLock(id) { return ipcRenderer.invoke('work:lock:renew', String(id || '')); },
+    writeFile(payload) { return ipcRenderer.invoke('work:workspace:write', payload || {}); }
   }),
   tools: Object.freeze({
     register(definitions) { return ipcRenderer.invoke('tools:register', definitions); },

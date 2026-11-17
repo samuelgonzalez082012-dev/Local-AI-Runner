@@ -16,7 +16,7 @@
     browserEnabled:false, browserAskNewSites:true, browserAutoApprove:false, browserDock:false, maxAgentSteps:25, agentTimeoutMinutes:10, visionModel:''
   };
   const TRANSLATIONS = {
-    en: {connectionPageIntro:'Configure your model server, choose a workspace for file-aware tasks and register approved MCP servers.',modelServerHeading:'Model server',fileWorkspaceHeading:'File workspace',workspaceBackupsHeading:'Workspace backups',externalToolServersHeading:'External tool servers (MCP)',chooseFolder:'Choose folder',connectRefreshButton:'Connect / refresh',noMeasurement:'No measurement yet', chat:'Chats',projects:'Projects',editor:'Code editor',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings',newChat:'New chat',workspace:'WORKSPACE',local:'LOCAL WORKSPACE',
+    en: {connectionPageIntro:'Configure your model server, choose a workspace for file-aware tasks and register approved MCP servers.',modelServerHeading:'Model server',fileWorkspaceHeading:'File workspace',workspaceBackupsHeading:'Workspace backups',externalToolServersHeading:'External tool servers (MCP)',chooseFolder:'Choose folder',connectRefreshButton:'Connect / refresh',noMeasurement:'No measurement yet', chat:'Chats',projects:'Projects',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings',newChat:'New chat',workspace:'WORKSPACE',local:'LOCAL WORKSPACE',
       recentChats:'RECENT CHATS',archivedChats:'ARCHIVED CHATS',filterConversations:'Filter conversations',privateWorkspace:'PRIVATE AI WORKSPACE',projectsIntro:'Keep conversations, documents and project instructions together.',newProject:'＋ New project',organizeWork:'ORGANIZE YOUR WORK',noProjects:'No projects yet',createProjectHint:'Create a project to keep documents, notes and project-specific chats together.',projectWorkspace:'Project workspace',documents:'documents',chatsCount:'chats',updated:'Updated',noProjectDocs:'No documents added to this project yet.',addDocuments:'＋ Add documents',summarizeKnowledge:'Summarize knowledge',openProjectChat:'Open project chat',removeDocument:'Remove document',
       localInference:'LOCAL INFERENCE',modelsIntro:'Inspect installed models, compare response speed and see which capabilities are available. Model downloading is intentionally not included.',refreshModels:'↻ Refresh models',noModels:'No installed models detected',connectRefresh:'Connect your model server and refresh. Model downloading is intentionally not included.',localModel:'Local model',sizeUnavailable:'Size unavailable',vision:'Vision',thinking:'Thinking',tools:'Tools',includeComparison:'Include in comparison',useModel:'Use this model',modelComparison:'Model comparison',runComparison:'Run comparison',comparisonPrompt:'Comparison prompt',noComparison:'No comparison has been run yet.',runtimeInfo:'Runtime information',runtimeDisclaimer:'Reported by the configured backend; hardware metrics depend on the server.',refresh:'Refresh',
       automation:'AUTOMATION',tasksIntro:'Save repeatable tasks, run bounded work sessions and review task history.',newTask:'＋ New task',all:'All',active:'Active',scheduled:'Scheduled',completed:'Completed',noTasks:'No tasks in this view',createTaskHint:'Create a task to save repeatable instructions or schedule work while the app is open.',created:'Created',runs:'runs',workflow:'Workflow',running:'Running',run:'Run',stop:'Stop',delete:'Delete',reusableWorkflows:'Reusable workflows',workflowIntro:'Build repeatable, multi-step instructions you can run or schedule.',createWorkflow:'＋ Create workflow',noWorkflows:'No reusable workflows yet. Create one to save a sequence of instructions you can run again.',
@@ -59,7 +59,7 @@
   function t(key) { const language = settings.uiLanguage || 'en'; return TRANSLATIONS[language]?.[key] ?? TRANSLATIONS.en[key] ?? key; }
   function tf(key, values = {}) { return Object.entries(values).reduce((result,[name,value])=>result.replaceAll(`{${name}}`,String(value)),t(key)); }
 
-  const URL_DEFAULTS = { ollama: 'http://localhost:11434', openai: 'http://localhost:1234', openrouter: 'https://openrouter.ai/api/v1', anthropic: 'https://api.anthropic.com' };
+  const URL_DEFAULTS = { ollama: 'http://localhost:11434', openai: 'http://localhost:1234', anthropic: 'https://api.anthropic.com' };
   const TEXT_EXTENSIONS = new Set(['txt','md','csv','json','xml','html','htm','css','js','mjs','cjs','ts','tsx','jsx','py','java','cs','yaml','yml','log','sql','sh','ps1','toml','ini','cfg','go','rs','c','h','cpp','hpp','rb','php','swift','kt']);
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -287,7 +287,7 @@
     settings.inspectorWidth = clampNumber(settings.inspectorWidth, 280, 420, DEFAULTS.inspectorWidth);
     if (!['standard','bubbles','document'].includes(settings.messageStyle)) settings.messageStyle = 'standard';
     settings.speechVoice = String(settings.speechVoice || '');
-    settings.backend = ['openai','openrouter','anthropic'].includes(settings.backend) ? settings.backend : 'ollama';
+    settings.backend = ['openai','anthropic'].includes(settings.backend) ? settings.backend : 'ollama';
     settings.baseUrl = String(settings.baseUrl || URL_DEFAULTS[settings.backend]).trim();
     settings.apiKey = String(settings.apiKey || '');
     settings.chatsPos = settings.chatsPos === 'right' ? 'right' : 'left';
@@ -366,15 +366,6 @@
     if (backdrop) backdrop.hidden = mobilePanel === 'none';
   }
 
-  function syncProviderFields() {
-    const key = $('apiKey');
-    const optional = key?.closest('label')?.querySelector('.optional');
-    if (optional) optional.textContent = settings.backend === 'openrouter' ? 'Required' : 'Optional';
-    if (key) key.placeholder = settings.backend === 'openrouter' ? 'Paste your OpenRouter API key' : 'Only if your server requires one';
-    const url = $('baseUrl');
-    if (url) url.placeholder = URL_DEFAULTS[settings.backend] || URL_DEFAULTS.ollama;
-  }
-
   function syncSettingsUI() {
     const fields = {
       backend: settings.backend, baseUrl: settings.baseUrl, apiKey: settings.apiKey,
@@ -396,7 +387,6 @@
     };
     Object.entries(fields).forEach(([id, value]) => { if ($(id)) $(id).type === 'checkbox' ? ($(id).checked = !!value) : ($(id).value = value); });
     updateRangeLabels();
-    syncProviderFields();
     syncChatSystemField();
   }
 
@@ -697,7 +687,6 @@
       headers['anthropic-version'] = '2026-10-21';
       if (settings.apiKey) headers['x-api-key'] = settings.apiKey;
     } else if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
-    if (settings.backend === 'openrouter') headers['X-Title'] = 'Local AI Runner';
     return headers;
   }
 
@@ -728,11 +717,10 @@
 
   async function loadModels() {
     if (!baseURL()) { setStatus(false, 'Enter a server URL'); return; }
-    if (settings.backend === 'openrouter' && !settings.apiKey.trim()) { setStatus(false, 'Enter an OpenRouter API key'); $('connectionDetail').textContent = 'An OpenRouter API key is required to load hosted models.'; return; }
     setStatus(null, 'Connecting…');
     $('connectButton').disabled = true;
     try {
-      const endpoint = settings.backend === 'ollama' ? '/api/tags' : settings.backend === 'openrouter' ? '/models' : '/v1/models';
+      const endpoint = settings.backend === 'ollama' ? '/api/tags' : '/v1/models';
       const data = await apiRequest(baseURL() + endpoint);
       modelMetadata = settings.backend === 'ollama' ? (data.models || []) : (data.data || []);
       modelNames = settings.backend === 'ollama'
@@ -1031,321 +1019,6 @@
         return JSON.stringify({ title: chat.title, model: chat.model, messages: chat.messages.slice(-count).map(message => ({ role: message.role, content: String(message.content || '').slice(0, 1500) })) }, null, 2);
       }
     },
-    search_local_content: {
-      definition: {
-        name: 'search_local_content',
-        description: 'Search locally saved conversations, project documents, tasks and memories. Read-only; results are local app data, not web search.',
-        parameters: { type: 'object', properties: { query: { type: 'string', minLength: 2, maxLength: 200 }, limit: { type: 'integer', minimum: 1, maximum: 10 } }, required: ['query'], additionalProperties: false }
-      },
-      run: async args => {
-        const query = String(args.query || '').trim().toLowerCase();
-        if (query.length < 2) throw new Error('Use at least two characters to search local content.');
-        const terms = [...new Set(query.split(/[^\p{L}\p{N}_-]+/u).filter(term => term.length > 1))];
-        const bySource = new Map();
-        contentIndex().forEach(entry => {
-          const title = String(entry.title || '').toLowerCase();
-          const body = String(entry.text || '').toLowerCase();
-          let score = title.includes(query) ? 12 : 0;
-          let position = body.indexOf(query);
-          if (position >= 0) score += 10;
-          for (const term of terms) {
-            if (title.includes(term)) score += 8;
-            const termPosition = body.indexOf(term);
-            if (termPosition >= 0) {
-              if (position < 0 || termPosition < position) position = termPosition;
-              score += 2;
-            }
-          }
-          if (!score) return;
-          const result = {
-            type: entry.type, title: entry.title, role: entry.role,
-            excerpt: String(entry.text || '').slice(Math.max(0, (position < 0 ? 0 : position) - 100), (position < 0 ? 0 : position) + 240),
-            score, updated: entry.date || null,
-            source: [entry.type, entry.chatId || '', entry.projectId || '', entry.taskId || '', entry.memoryId || '', entry.title].join('|')
-          };
-          const previous = bySource.get(result.source);
-          if (!previous || result.score > previous.score) bySource.set(result.source, result);
-        });
-        const results = [...bySource.values()].sort((a, b) => b.score - a.score || (b.updated || 0) - (a.updated || 0));
-        return JSON.stringify({ scope: 'local app data', results: results.slice(0, Math.round(clampNumber(args.limit, 1, 10, 5))) }, null, 2);
-      }
-    },
-    get_current_project_context: {
-      definition: {
-        name: 'get_current_project_context',
-        description: 'Read the project linked to the current conversation (or the open project), including its description and bounded excerpts from its saved documents.',
-        parameters: { type: 'object', properties: { max_characters: { type: 'integer', minimum: 500, maximum: 12000 } }, additionalProperties: false }
-      },
-      run: async (args, context) => {
-        const chat = context?.chat || current();
-        const projectId = chat?.projectId || activeProjectId;
-        const project = projects.find(entry => entry.id === projectId);
-        if (!project) return 'No project is linked to this conversation or currently open.';
-        let remaining = Math.round(clampNumber(args.max_characters, 500, 12000, 6000));
-        const documents = (project.documents || []).map(document => {
-          if (remaining <= 0) return { name: document.name, excerpt: '[Excerpt limit reached]' };
-          const excerpt = String(document.text || '').slice(0, remaining);
-          remaining -= excerpt.length;
-          return { name: document.name, excerpt };
-        });
-        return JSON.stringify({
-          name: project.name, description: project.description || '',
-          folderLinked: !!project.folderPath, documentCount: (project.documents || []).length, documents
-        }, null, 2);
-      }
-    },
-    list_local_projects: {
-      definition: {
-        name: 'list_local_projects',
-        description: 'List locally saved projects, their descriptions, document counts and linked folders. Read-only.',
-        parameters: { type: 'object', properties: {}, additionalProperties: false }
-      },
-      run: async () => JSON.stringify(projects.slice(0, 25).map(project => ({
-        id: project.id, name: project.name, description: String(project.description || '').slice(0, 200),
-        documentCount: (project.documents || []).length, folderLinked: !!project.folderPath,
-        linkedConversationCount: conversations.filter(chat => chat.projectId === project.id).length
-      })), null, 2)
-    },
-    create_local_project: {
-      definition: {
-        name: 'create_local_project',
-        description: 'Create a new local project container. It does not create or modify any files. Requires user confirmation.',
-        parameters: { type: 'object', properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, description: { type: 'string', maxLength: 500 } }, required: ['name'], additionalProperties: false }
-      },
-      run: async args => {
-        const name = String(args.name || '').trim();
-        if (!name) throw new Error('A project name is required.');
-        if (projects.length >= 500) throw new Error('The local project limit has been reached.');
-        const description = String(args.description || '').trim();
-        const approved = await confirmAction({
-          title: 'Create local project?', message: `Create “${name.slice(0, 80)}”?`,
-          detail: 'This creates an empty project container in Local AI Runner. It does not create files or access a folder.',
-          acceptLabel: 'Create project', danger: false
-        });
-        if (!approved) return 'Project creation was cancelled.';
-        const project = { id: uid(), name: name.slice(0, 80), description: description.slice(0, 500), documents: [], created: Date.now(), updated: Date.now() };
-        const next = [project, ...projects];
-        await database.set('projects', next);
-        projects = next;
-        renderProjects();
-        return JSON.stringify({ created: true, id: project.id, name: project.name });
-      }
-    },
-    list_local_memories: {
-      definition: {
-        name: 'list_local_memories',
-        description: 'List saved local memories and whether memory injection is enabled. Read-only; memory text is returned only when explicitly requested by the model.',
-        parameters: { type: 'object', properties: { include_text: { type: 'boolean' } }, additionalProperties: false }
-      },
-      run: async args => JSON.stringify({
-        memoryInjectionEnabled: !!settings.memoryEnabled,
-        memories: memories.slice(0, 25).map(memory => ({
-          id: memory.id, title: memory.title, enabled: memory.enabled !== false,
-          ...(args.include_text ? { text: String(memory.text || '').slice(0, 600) } : {})
-        }))
-      }, null, 2)
-    },
-    save_local_memory: {
-      definition: {
-        name: 'save_local_memory',
-        description: 'Save a user-approved preference or fact as persistent local memory. Requires user confirmation; saved memory is only added to future prompts if memory is enabled in settings.',
-        parameters: { type: 'object', properties: { title: { type: 'string', minLength: 1, maxLength: 100 }, text: { type: 'string', minLength: 1, maxLength: 2000 } }, required: ['title', 'text'], additionalProperties: false }
-      },
-      run: async args => {
-        const title = String(args.title || '').trim();
-        const text = String(args.text || '').trim();
-        if (!title || !text) throw new Error('A memory title and text are required.');
-        if (memories.length >= 2000) throw new Error('The saved-memory limit has been reached.');
-        const approved = await confirmAction({
-          title: 'Save local memory?', message: `Save “${title.slice(0, 100)}”?`,
-          detail: `This information will remain on this device.${settings.memoryEnabled ? ' Memory injection is enabled.' : ' Memory injection is currently disabled in settings.'}`,
-          acceptLabel: 'Save memory', danger: false
-        });
-        if (!approved) return 'Memory save was cancelled.';
-        const memory = { id: uid(), title: title.slice(0, 100), text: text.slice(0, 2000), created: Date.now(), enabled: true };
-        const next = [memory, ...memories];
-        await database.set('memories', next);
-        memories = next;
-        renderMemory();
-        return JSON.stringify({ saved: true, id: memory.id, title: memory.title, memoryInjectionEnabled: !!settings.memoryEnabled });
-      }
-    },
-    delete_local_memory: {
-      definition: {
-        name: 'delete_local_memory',
-        description: 'Permanently remove a saved local memory by ID. Requires user confirmation.',
-        parameters: { type: 'object', properties: { id: { type: 'string', minLength: 1, maxLength: 100 } }, required: ['id'], additionalProperties: false }
-      },
-      run: async args => {
-        const memory = memories.find(entry => entry.id === args.id);
-        if (!memory) throw new Error('That saved memory no longer exists.');
-        const approved = await confirmAction({
-          title: 'Delete saved memory?', message: `Delete “${memory.title}”?`,
-          detail: 'This cannot be undone. The memory will be removed from local storage and future prompts.',
-          acceptLabel: 'Delete memory'
-        });
-        if (!approved) return 'Memory deletion was cancelled.';
-        const next = memories.filter(entry => entry.id !== memory.id);
-        await database.set('memories', next);
-        memories = next;
-        renderMemory();
-        return JSON.stringify({ deleted: true, id: memory.id, title: memory.title });
-      }
-    },
-    list_local_tasks: {
-      definition: {
-        name: 'list_local_tasks',
-        description: 'List saved and scheduled local work tasks with their status and run time. Read-only.',
-        parameters: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 30 } }, additionalProperties: false }
-      },
-      run: async args => JSON.stringify(tasks.slice(0, Math.round(clampNumber(args.limit, 1, 30, 20))).map(task => ({
-        id: task.id, title: task.title, status: task.status, due: task.due ? new Date(task.due).toISOString() : null,
-        runs: task.runs || 0, projectId: task.projectId || null,         prompt: String(task.prompt || '').slice(0, 300)
-      })), null, 2)
-    },
-    list_reusable_workflows: {
-      definition: {
-        name: 'list_reusable_workflows',
-        description: 'List saved local workflows (reusable multi-step instructions), including their step titles and prompts. Read-only.',
-        parameters: { type: 'object', properties: {}, additionalProperties: false }
-      },
-      run: async () => JSON.stringify(workflows.slice(0, 10).map(workflow => ({
-        id: workflow.id, name: workflow.name, description: workflow.description || '',
-        steps: (workflow.steps || []).slice(0, 12).map(step => ({ title: step.title, prompt: String(step.prompt || '').slice(0, 250) }))
-      })), null, 2)
-    },
-    create_reusable_workflow: {
-      definition: {
-        name: 'create_reusable_workflow',
-        description: 'Save a reusable local multi-step workflow, similar to a custom assistant prompt. Each step runs in order when the workflow is started. Requires user confirmation.',
-        parameters: { type: 'object', properties: {
-          name: { type: 'string', minLength: 1, maxLength: 100 },
-          description: { type: 'string', maxLength: 300 },
-          steps: { type: 'array', minItems: 1, maxItems: 12, items: { type: 'object', properties: {
-            title: { type: 'string', minLength: 1, maxLength: 80 },
-            prompt: { type: 'string', minLength: 1, maxLength: 3000 }
-          }, required: ['title', 'prompt'], additionalProperties: false } }
-        }, required: ['name', 'steps'], additionalProperties: false }
-      },
-      run: async args => {
-        const name = String(args.name || '').trim();
-        const steps = (args.steps || []).map(step => ({ title: String(step.title || '').trim(), prompt: String(step.prompt || '').trim() }));
-        if (!name || !steps.length || steps.length > 12 || steps.some(step => !step.title || !step.prompt)) throw new Error('Provide a name and 1–12 complete workflow steps.');
-        if (workflows.length >= 1000) throw new Error('The saved-workflow limit has been reached.');
-        const description = String(args.description || '').trim().slice(0, 300);
-        const approved = await confirmAction({
-          title: 'Save reusable workflow?', message: name.slice(0, 100),
-          detail: `${steps.length} ordered steps will be stored locally. Starting this workflow later creates a task that can use enabled tools and their normal approvals.`,
-          acceptLabel: 'Save workflow', danger: false
-        });
-        if (!approved) return 'Workflow creation was cancelled.';
-        const workflow = { id: uid(), name: name.slice(0, 100), description, steps, created: Date.now(), updated: Date.now() };
-        const next = [workflow, ...workflows];
-        await database.set('workflows', next);
-        workflows = next;
-        renderWorkflowList();
-        return JSON.stringify({ created: true, id: workflow.id, name: workflow.name, steps: steps.length });
-      }
-    },
-    create_local_task: {
-      definition: {
-        name: 'create_local_task',
-        description: 'Create a saved task for later, schedule it to run while the app is open, or ask to run it after the current response finishes. Running can invoke enabled tools and may require additional approvals. Requires user confirmation.',
-        parameters: { type: 'object', properties: {
-          title: { type: 'string', minLength: 1, maxLength: 100 },
-          instructions: { type: 'string', minLength: 1, maxLength: 12000 },
-          run_at: { type: 'string', maxLength: 80, description: 'Optional future date/time in ISO 8601 format. The app must remain open at that time.' },
-          start_after_response: { type: 'boolean', description: 'If true and run_at is omitted, start the task after the current model response completes.' },
-          project_id: { type: 'string', maxLength: 100, description: 'Optional existing project ID to link to this task.' }
-        }, required: ['title', 'instructions'], additionalProperties: false }
-      },
-      run: async args => {
-        const title = String(args.title || '').trim();
-        const prompt = String(args.instructions || '').trim();
-        if (!title || !prompt) throw new Error('A task title and instructions are required.');
-        if (tasks.length >= 5000) throw new Error('The local task limit has been reached.');
-        const projectId = String(args.project_id || '').trim() || null;
-        if (projectId && !projects.some(project => project.id === projectId)) throw new Error('The requested project does not exist.');
-        const runAt = args.run_at ? Date.parse(args.run_at) : null;
-        if (args.run_at && (!Number.isFinite(runAt) || runAt <= Date.now())) throw new Error('Choose a valid future run_at time.');
-        if (runAt && args.start_after_response) throw new Error('Choose either a scheduled time or start_after_response, not both.');
-        if (!runAt && args.start_after_response && !settings.model && !modelNames.length) throw new Error('Connect and select a model before asking to start this task.');
-        const approved = await confirmAction({
-          title: runAt ? 'Schedule local task?' : args.start_after_response ? 'Run local task after this response?' : 'Save local task?',
-          message: title.slice(0, 100),
-          detail: runAt
-            ? `This task will start at ${new Date(runAt).toLocaleString()} if Local AI Runner is open. It may use enabled browser/workspace tools and their approvals.`
-            : args.start_after_response
-              ? 'The task will start after this response finishes, using the currently selected model and enabled tools.'
-              : 'This saves the task for manual start from the Tasks page. No model run will start now.',
-          acceptLabel: runAt ? 'Schedule task' : args.start_after_response ? 'Save and run' : 'Save task',
-          danger: false
-        });
-        if (!approved) return 'Task creation was cancelled.';
-        const task = {
-          id: uid(), title: title.slice(0, 100), prompt: prompt.slice(0, 12000), due: runAt,
-          status: runAt ? 'scheduled' : 'queued', created: Date.now(), runs: 0,
-          chatId: null, projectId
-        };
-        const next = [task, ...tasks];
-        await database.set('tasks', next);
-        tasks = next;
-        renderTasks();
-        renderConversationList();
-        if (args.start_after_response) queuedAgentTaskRuns.push(task.id);
-        return JSON.stringify({ created: true, id: task.id, title: task.title, status: task.status, due: runAt ? new Date(runAt).toISOString() : null, willStartAfterResponse: !!args.start_after_response });
-      }
-    },
-    run_saved_workflow: {
-      definition: {
-        name: 'run_saved_workflow',
-        description: 'Start a saved reusable workflow now after the current response, or schedule it for a future time. Requires user confirmation. The app must remain open for scheduled work.',
-        parameters: { type: 'object', properties: {
-          workflow_id: { type: 'string', minLength: 1, maxLength: 100 },
-          run_at: { type: 'string', maxLength: 80, description: 'Optional future date/time in ISO 8601 format.' }
-        }, required: ['workflow_id'], additionalProperties: false }
-      },
-      run: async args => {
-        const workflow = workflows.find(entry => entry.id === args.workflow_id);
-        if (!workflow) throw new Error('That saved workflow no longer exists.');
-        const runAt = args.run_at ? Date.parse(args.run_at) : null;
-        if (args.run_at && (!Number.isFinite(runAt) || runAt <= Date.now())) throw new Error('Choose a valid future run_at time.');
-        if (tasks.length >= 5000) throw new Error('The local task limit has been reached.');
-        if (!runAt && !settings.model && !modelNames.length) throw new Error('Connect and select a model before running a workflow.');
-        const approved = await confirmAction({
-          title: runAt ? 'Schedule workflow?' : 'Run saved workflow?',
-          message: workflow.name,
-          detail: runAt
-            ? `This workflow will start at ${new Date(runAt).toLocaleString()} if Local AI Runner is open. Its tools may require additional approvals.`
-            : 'It will start after the current response finishes, using enabled tools and their normal approvals.',
-          acceptLabel: runAt ? 'Schedule workflow' : 'Run workflow',
-          danger: false
-        });
-        if (!approved) return 'Workflow run was cancelled.';
-        const task = {
-          id: uid(), title: `Workflow: ${workflow.name}`.slice(0, 100),
-          prompt: compileWorkflowPrompt(workflow),
-          workflowSnapshot: JSON.parse(JSON.stringify(workflow)), due: runAt,
-          status: runAt ? 'scheduled' : 'queued', created: Date.now(), runs: 0,
-          chatId: null, projectId: current()?.projectId || activeProjectId || null
-        };
-        const next = [task, ...tasks];
-        await database.set('tasks', next);
-        tasks = next;
-        renderTasks();
-        renderConversationList();
-        if (!runAt) queuedAgentTaskRuns.push(task.id);
-        return JSON.stringify({ created: true, id: task.id, workflow: workflow.name, status: task.status, due: runAt ? new Date(runAt).toISOString() : null, willStartAfterResponse: !runAt });
-      }
-    },
-    analyze_tabular_data: {
-      definition: {
-        name: 'analyze_tabular_data',
-        description: 'Analyze user-provided CSV or JSON records locally. Returns row count, missing values, numeric min/max/mean/median, and common text values; it does not execute Python or other code.',
-        parameters: { type: 'object', properties: { data: { type: 'string', minLength: 1, maxLength: 500000, description: 'CSV text with a header row or a JSON array of objects' } }, required: ['data'], additionalProperties: false }
-      },
-      run: async args => JSON.stringify(window.LocalDataAnalysis.analyzeTabularData(String(args.data || '')), null, 2)
-    },
     list_workspace_files: {
       definition: { name:'list_workspace_files', description:'List files and folders inside the user-selected workspace. Never attempt paths outside it.', parameters:{type:'object',properties:{path:{type:'string',description:'Optional relative folder path'}},additionalProperties:false} },
       run: async args => JSON.stringify(await window.localAI.workspace.list(String(args.path||'')),null,2)
@@ -1381,8 +1054,6 @@
   };
   // ---------- cowork agent: plan, pause/edit/stop, browser tools ----------
   let pendingToolImages = [];
-  const queuedAgentTaskRuns = [];
-  let drainingAgentTaskRuns = false;
   const AGENT_ONLY_TOOLS = new Set(['update_plan', 'complete_step']);
   const hasBrowserBridge = () => !!window.localAI?.browser;
   function toolDetails(name, source = 'builtin') {
@@ -1390,13 +1061,6 @@
     if (name.startsWith('browser_')) return { category: 'browser', approval: 'Work mode + browser permission; risky actions ask', label: 'Browser' };
     if (['edit_workspace_file', 'create_project_file'].includes(name)) return { category: 'workspace.write', approval: 'Work mode + file permission + native confirmation and backup', label: 'Workspace write' };
     if (name.includes('workspace')) return { category: 'workspace.read', approval: 'Read-only, confined to selected workspace', label: 'Workspace read' };
-    if (name === 'analyze_tabular_data') return { category: 'app.analysis', approval: 'Local, bounded CSV/JSON analysis; no code execution', label: 'Data analysis' };
-    if (name === 'search_local_content') return { category: 'app.search', approval: 'Read-only locally saved app content', label: 'Local search' };
-    if (name === 'get_current_project_context') return { category: 'app.project', approval: 'Read-only project documents', label: 'Project context' };
-    if (['create_local_project', 'list_local_projects'].includes(name)) return { category: 'app.project', approval: name === 'create_local_project' ? 'Creates an empty local project after confirmation' : 'Read-only local project metadata', label: 'Projects' };
-    if (name.includes('memory')) return { category: 'app.memory', approval: name === 'list_local_memories' ? 'Read-only local memory; text is opt-in' : 'Memory changes require confirmation', label: 'Memory' };
-    if (name.includes('workflow')) return { category: 'app.workflow', approval: name.startsWith('list_') ? 'Read-only saved workflows' : 'Workflow actions require confirmation', label: 'Workflows' };
-    if (name.includes('task')) return { category: 'app.tasks', approval: name === 'list_local_tasks' ? 'Read-only task metadata' : 'Task creation/run requires confirmation', label: 'Tasks' };
     if (AGENT_ONLY_TOOLS.has(name)) return { category: 'agent.control', approval: 'Work mode only', label: 'Agent control' };
     return { category: 'app.read', approval: 'Read-only app data', label: 'App read' };
   }
@@ -1431,13 +1095,7 @@
     }
     const groups = new Map();
     entries.forEach(entry => { if (!groups.has(entry.category)) groups.set(entry.category, []); groups.get(entry.category).push(entry); });
-    const names = {
-      'app.read':'App data · read-only', 'app.search':'Local search', 'app.analysis':'Data analysis',
-      'app.project':'Projects', 'app.memory':'Local memory', 'app.workflow':'Reusable workflows',
-      'app.tasks':'Tasks and scheduling', 'workspace.read':'Workspace · read-only',
-      'workspace.write':'Workspace · writes', 'browser':'Browser tools',
-      'agent.control':'Agent planning', 'external.connector':'External MCP tools'
-    };
+    const names = { 'app.read':'App data · read-only', 'workspace.read':'Workspace · read-only', 'workspace.write':'Workspace · writes', 'browser':'Browser tools', 'agent.control':'Agent planning', 'external.connector':'External MCP tools' };
     for (const [category, items] of groups) {
       const heading = document.createElement('div'); heading.className = 'tool-registry-group'; heading.textContent = names[category] || category; target.append(heading);
       items.forEach(entry => {
@@ -1685,16 +1343,6 @@
     TOOLS[`browser_${name}`] = { definition: { name: `browser_${name}`, description, parameters: { type: 'object', properties, required: required || [], additionalProperties: false } }, run };
   }
   const indexProperty = { type: 'integer', minimum: 1, maximum: 120, description: 'Element number from the latest browser_get_dom' };
-  defineBrowserTool('search_web', 'Search the public web with DuckDuckGo in the visible integrated browser. The search query is sent to DuckDuckGo; new-site approval and browser safeguards apply. Returns visible result links and excerpts. Open result links and inspect multiple sources before presenting a cited research summary.', { query: { type: 'string', minLength: 2, maxLength: 500 } }, ['query'],
-    async args => {
-      const query = String(args.query || '').trim();
-      if (query.length < 2) throw new Error('Use at least two characters for a web search.');
-      const url = new URL('https://html.duckduckgo.com/html/');
-      url.searchParams.set('q', query);
-      const opened = await browserCall('navigate', { url: url.href });
-      const results = await browserCall('get_dom', {});
-      return untrusted(results, `DuckDuckGo search for “${query}”. ${pageLine(opened)}\n\n${results.text}`);
-    });
   defineBrowserTool('navigate', 'Open a web page (http or https) in the visible browser. Afterwards call browser_get_dom to see what is on it.', { url: { type: 'string', description: 'Full address, for example https://example.com' } }, ['url'],
     async args => { const r = await browserCall('navigate', { url: args.url }); return untrusted(r, `Opened. ${pageLine(r)}${r.loaded === false ? '\n(The page was still loading when this returned.)' : ''}`); });
   defineBrowserTool('get_dom', 'List the interactive elements currently in view (links, buttons, fields) with numbers, plus headings and visible text. The same numbers are drawn on the page. Call it again after navigating, scrolling or when the page changes.', {}, [],
@@ -1779,13 +1427,13 @@
   let browserBoundsKey = '';
   let browserShown = null;
   let browserUiReady = false;
-  const browserWanted = () => hasBrowserBridge() && (activeView === 'browser' || (activeView === 'chat' && settings.browserDock));
+  const browserWanted = () => hasBrowserBridge() && (activeView === 'browser' || activeView === 'work' || (activeView === 'chat' && settings.browserDock));
 
   function placeBrowserPanel() {
     const panel = $('browserPanel');
     if (!panel) return;
     const docked = hasBrowserBridge() && activeView === 'chat' && settings.browserDock;
-    const slot = docked ? $('browserDockSlot') : $('browserMainSlot');
+    const slot = docked ? $('browserDockSlot') : activeView === 'work' ? $('workBrowserSlot') : $('browserMainSlot');
     if (slot && panel.parentElement !== slot) { slot.appendChild(panel); browserBoundsKey = ''; }
     if ($('browserDock')) $('browserDock').hidden = !docked;
     const dockButton = $('browserDockButton');
@@ -2012,7 +1660,7 @@
       const info = capabilities.get(model);
       if (info?.thinking) requestBody.think = settings.thinkMode !== 'off';
     }
-    const endpoint = settings.backend === 'ollama' ? '/api/chat' : settings.backend === 'anthropic' ? '/v1/messages' : settings.backend === 'openrouter' ? '/chat/completions' : '/v1/chat/completions';
+    const endpoint = settings.backend === 'ollama' ? '/api/chat' : settings.backend === 'anthropic' ? '/v1/messages' : '/v1/chat/completions';
     const request = { url: baseURL() + endpoint, method: 'POST', headers: requestHeaders('POST'), body: JSON.stringify(requestBody) };
 
     function refreshOutput() {
@@ -2158,6 +1806,115 @@
     return result;
   }
 
+  // A narrow bridge for Work Manager: agents reuse the app's approved model transport,
+  // selected provider, credential handling and stream parser instead of opening raw network access.
+  const WORK_AGENT_TOOLS = [
+    { type:'function', function:{ name:'list_workspace_files', description:'List files and folders in the selected project workspace. Use a relative directory path or an empty string for the root.', parameters:{ type:'object', properties:{ path:{type:'string', description:'Workspace-relative directory, default empty'} }, additionalProperties:false } } },
+    { type:'function', function:{ name:'read_workspace_file', description:'Read a text/source file from the selected project workspace.', parameters:{ type:'object', properties:{ path:{type:'string', description:'Workspace-relative file path'} }, required:['path'], additionalProperties:false } } },
+    { type:'function', function:{ name:'search_workspace_files', description:'Search text in the selected project workspace.', parameters:{ type:'object', properties:{ query:{type:'string', minLength:1, maxLength:300}, path:{type:'string', description:'Optional workspace-relative directory'} }, required:['query'], additionalProperties:false } } },
+    { type:'function', function:{ name:'write_workspace_file', description:'Create or update a text/source file. This requires the write-proposal permission, an exclusive write lock, a native user approval dialog, and a backup for existing files. Never claim success unless the tool confirms it.', parameters:{ type:'object', properties:{ path:{type:'string', description:'Workspace-relative file path'}, content:{type:'string', description:'Complete new file contents'} }, required:['path','content'], additionalProperties:false } } },
+    { type:'function', function:{ name:'propose_project_memory', description:'Propose a reusable project instruction, architecture fact, design decision or restriction. The Planner/user must approve it before it becomes shared project memory.', parameters:{ type:'object', properties:{ title:{type:'string',maxLength:120}, content:{type:'string',maxLength:5000}, category:{type:'string',enum:['architecture','rules','design','decisions','restrictions','notes']} }, required:['title','content','category'], additionalProperties:false } } },
+    { type:'function', function:{ name:'send_agent_message', description:'Send a message to another agent or the whole team. Use this to coordinate dependencies, ask questions and report decisions.', parameters:{ type:'object', properties:{ to:{type:'string',description:'Agent ID or team'}, body:{type:'string',maxLength:8000} }, required:['to','body'], additionalProperties:false } } },
+    { type:'function', function:{ name:'read_agent_messages', description:'Read recent messages addressed to you or the whole team for the current task.', parameters:{ type:'object', properties:{}, additionalProperties:false } } }
+  ];
+  async function acquireAgentFileLock(relativePath,agentId,mode,signal,onActivity) {
+    const initial=await window.localAI.work.acquireLock({path:relativePath,agentId,mode});
+    if(initial.acquired)return initial.lock;
+    if(!initial.queued)throw new Error('Could not acquire the requested file lock.');
+    onActivity?.({type:'file-lock-waiting',agentId,path:relativePath,mode});
+    const deadline=Date.now()+120000;
+    try {
+      while(Date.now()<deadline) {
+        if(signal?.aborted)throw new DOMException('The agent run was cancelled.','AbortError');
+        await new Promise(resolve=>setTimeout(resolve,400));
+        const state=await window.localAI.work.state();
+        const promoted=state.locks.find(lock=>lock.file===relativePath&&lock.agentId===agentId&&lock.mode===mode);
+        if(promoted)return promoted;
+      }
+      throw new Error('Timed out waiting for the file lock.');
+    } catch(error) {
+      await window.localAI.work.cancelLockRequest(initial.ticketId).catch(()=>{});
+      throw error;
+    }
+  }
+  async function executeWorkAgentTool(name,args,agent,signal,onActivity,taskId) {
+    if(signal?.aborted) throw new DOMException('The agent run was cancelled.','AbortError');
+    const allowed=new Set(agent?.tools||[]);
+    if(name==='list_workspace_files'||name==='read_workspace_file'||name==='search_workspace_files') {
+      if(!allowed.has('read')) throw new Error('This agent does not have read permission.');
+      if(name==='list_workspace_files') return JSON.stringify(await window.localAI.workspace.list(String(args.path||'')));
+      if(name==='read_workspace_file') {
+        const relativePath=String(args.path||'').replace(/\\/g,'/');
+        const lock=await acquireAgentFileLock(relativePath,agent.id,'read',signal,onActivity);
+        onActivity?.({type:'file-lock-acquired',agentId:agent.id,path:relativePath,mode:'read'});
+        try { const content=await window.localAI.workspace.read(relativePath);onActivity?.({type:'file-read',agentId:agent.id,path:relativePath});return content; }
+        finally { await window.localAI.work.releaseLock(lock.id).catch(()=>{});onActivity?.({type:'file-lock-released',agentId:agent.id,path:relativePath,mode:'read'}); }
+      }
+      return JSON.stringify(await window.localAI.workspace.search(String(args.query||''),String(args.path||'')));
+    }
+    if(name==='send_agent_message') {
+      if(!allowed.has('message')) throw new Error('This agent does not have messaging permission.');
+      const message=await window.localAI.work.sendMessage({from:agent.id,to:String(args.to||'team'),taskId,body:String(args.body||'')});onActivity?.({type:'agent-message',agentId:agent.id,to:message.to,body:message.body});return `Message sent to ${message.to}.`;
+    }
+    if(name==='read_agent_messages') {
+      if(!allowed.has('message')) throw new Error('This agent does not have messaging permission.');
+      return JSON.stringify(await window.localAI.work.messages(agent.id,taskId));
+    }
+    if(name==='propose_project_memory') {
+      if(!allowed.has('memory-propose')) throw new Error('This agent does not have permission to propose project memory.');
+      const proposal=await window.localAI.work.proposeMemory(args,agent.id);onActivity?.({type:'memory-proposed',agentId:agent.id,title:proposal.title});return `Memory proposal submitted for approval: ${proposal.title}`;
+    }
+    if(name==='write_workspace_file') {
+      if(!settings.allowFileWrites) throw new Error('File writes are disabled in Connections settings. Enable approved file creation and edits first.');
+      if(!allowed.has('write-proposal')) throw new Error('This agent does not have write-proposal permission.');
+      const relativePath=String(args.path||'').replace(/\\/g,'/');
+      const lock=await acquireAgentFileLock(relativePath,agent.id,'write',signal,onActivity);
+      onActivity?.({type:'file-lock-acquired',agentId:agent.id,path:relativePath,mode:'write'});
+      try { const written=await window.localAI.work.writeFile({path:relativePath,content:String(args.content??''),lockId:lock.id,agentId:agent.id});onActivity?.({type:'file-written',agentId:agent.id,path:relativePath,result:JSON.stringify(written)});return JSON.stringify(written); }
+      finally { await window.localAI.work.releaseLock(lock.id).catch(()=>{});onActivity?.({type:'file-lock-released',agentId:agent.id,path:relativePath,mode:'write'}); }
+    }
+    throw new Error(`Unknown Work agent tool: ${name}`);
+  }
+  window.localAIWorkRunner = Object.freeze({
+    async runAgent({ agent, prompt, signal, onActivity, taskId }) {
+      const model=String(agent?.model||settings.model||'').trim();
+      if(!model) throw new Error('Choose a model in the top bar before running a team task.');
+      if(agent?.provider&&agent.provider!=='inherit') throw new Error(`Agent provider “${agent.provider}” is not the active configured provider. Select “Use default provider” or switch the app connection before running this agent.`);
+      await ensureServerApproved();
+      const permittedDefinitions=WORK_AGENT_TOOLS.filter(item=>{
+        const name=item.function.name;
+        return name==='write_workspace_file'?(agent?.tools||[]).includes('write-proposal'):name==='propose_project_memory'?(agent?.tools||[]).includes('memory-propose'):['send_agent_message','read_agent_messages'].includes(name)?(agent?.tools||[]).includes('message'):(agent?.tools||[]).includes('read');
+      }).map(item=>item.function);
+      const modelInfo=settings.backend==='ollama'?capabilities.get(model):null;
+      const nativeTools=settings.backend!=='ollama'||!!(modelInfo?.known&&modelInfo.tools);
+      const permitted=nativeTools?permittedDefinitions.map(definition=>(TOOL_PROVIDER_ADAPTERS[settings.backend]||TOOL_PROVIDER_ADAPTERS.openai)(definition)):[];
+      const fallback=nativeTools?{prompt:'',names:[]}:window.LocalAIRunnerToolFallback?.buildToolFallbackPrompt(permittedDefinitions)||{prompt:'',names:[]};
+      const allowedFallbackNames=new Set(fallback.names);
+      const system=[settings.system,agent?.instructions||'',`You are ${agent?.name||'an AI team agent'} with role ${agent?.role||'assistant'}. You are working in a selected local project workspace. Inspect relevant files before editing. Use workspace tools for real file operations. File writes require user approval and an exclusive lock. Do not claim a file changed unless write_workspace_file confirms success. Respect the task scope and shared project instructions.`].filter(Boolean).join('\n\n');
+      const messages=[{role:'system',content:system},{role:'user',content:String(prompt||'')}];
+      let finalText='';
+      for(let round=0;round<8;round++) {
+        if(signal?.aborted) throw new DOMException('The agent run was cancelled.','AbortError');
+        const result=await streamCompletion({model,messages,tools:permitted,toolFallbackPrompt:fallback.prompt,signal:signal||new AbortController().signal,onDelta:()=>{}});
+        if(!nativeTools&&result.toolCalls.some(call=>!allowedFallbackNames.has(call.name)))throw new Error('The local model requested a tool outside this agent’s permission set.');
+        finalText=result.content||finalText;
+        if(!result.toolCalls?.length) break;
+        messages.push({role:'assistant',content:result.content||'',tool_calls:result.toolCalls.map(call=>({id:call.id,name:call.name,args:call.args||{}}))});
+        for(const call of result.toolCalls) {
+          onActivity?.({type:'tool-start',agentId:agent.id,tool:call.name,args:call.args||{}});
+          let output;
+          try { output=await executeWorkAgentTool(call.name,call.args||{},agent,signal,onActivity,taskId); }
+          catch(error) { output=`Tool error: ${error.message}`; }
+          messages.push({role:'tool',tool_call_id:call.id,tool_name:call.name,name:call.name,content:String(output).slice(0,12000)});
+          onActivity?.({type:'tool-finish',agentId:agent.id,tool:call.name,result:String(output).slice(0,500)});
+        }
+        if(round===7) finalText+='\n\nThe agent reached its eight tool-round limit.';
+      }
+      if(!finalText?.trim()) throw new Error(`${agent?.name||'Agent'} returned an empty response.`);
+      return finalText;
+    }
+  });
+
   function applyResult(message, result) {
     message.content = result.content;
     message.thinking = result.thinking;
@@ -2297,12 +2054,6 @@
       announceAssistantStatus(lastResponse?.error?'error':lastResponse?.stopped?'stopped':'complete');
       if(settings.autoRead && current()===chat) speakLatestResponse();
       if (running.size === 0) setStatus(modelNames.length ? true : null, modelNames.length ? `${modelNames.length} model${modelNames.length === 1 ? '' : 's'} available` : 'Not connected');
-      if (running.size === 0 && queuedAgentTaskRuns.length) {
-        setTimeout(() => drainQueuedAgentTasks().catch(error => {
-          console.error('Could not start a queued local task:', error);
-          toast(`Could not start a queued local task: ${error.message || 'unknown error'}`);
-        }), 0);
-      }
     }
     return true;
   }
@@ -2523,7 +2274,8 @@
 
 
   // ---------- navigation and local workspaces ----------
-  const VIEW_TITLES={chat:'Chats',projects:'Projects',editor:'Code editor',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
+  const VIEW_TITLES={chat:'Chats',projects:'Projects',work:'Work',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
+  window.addEventListener('work-manager:open-browser',()=>navigate('browser'));
   function navigate(view){
     if(!VIEW_TITLES[view])return;
     activeView=view;
@@ -2541,6 +2293,7 @@
     $('viewTitle').textContent=t(view);
     $('viewEyebrow').textContent=view==='chat'?t('workspace'):t('local');
     if(view==='projects')renderProjects();
+    if(view==='work')window.dispatchEvent(new Event('work-manager:show'));
     if(view==='models')renderModelCatalog();
     if(view==='tasks'){renderTasks();renderWorkflowList();}
     if(view==='connections'){refreshWorkspaceInfo();renderConnectors();}
@@ -2679,14 +2432,6 @@
   let modelMetadata=[];
   let benchmarkHistory=[];
   const benchmarkSelected=new Set();
-  function formatOpenRouterPrice(perToken) {
-    const value = Number(perToken);
-    if (!Number.isFinite(value) || value < 0) return '';
-    if (value === 0) return 'Free';
-    const perMillion = value * 1_000_000;
-    return perMillion < 0.01 ? '<$0.01' : '$' + perMillion.toFixed(perMillion < 1 ? 3 : 2);
-  }
-
   function renderModelCatalog(){
     const container=$('modelCatalog');container.replaceChildren();
     if(!modelNames.length){container.innerHTML=`<div class="section-card"><h2>${escapeHTML(t('noModels'))}</h2><p>${escapeHTML(t('connectRefresh'))}</p></div>`;return;}
@@ -2694,13 +2439,7 @@
       const meta=modelMetadata.find(entry=>(entry.name||entry.id)===model)||{};
       const info=capabilities.get(model);
       const card=document.createElement('article');card.className='model-card';
-      const pricing=meta.pricing||{};
-      const inputPrice=formatOpenRouterPrice(pricing.prompt);
-      const outputPrice=formatOpenRouterPrice(pricing.completion);
-      const priceDetails=settings.backend==='openrouter'?[inputPrice?`<span>Input ${escapeHTML(inputPrice)}/1M</span>`:'',outputPrice?`<span>Output ${escapeHTML(outputPrice)}/1M</span>`:''].filter(Boolean).join('') : '';
-      const contextDetails=settings.backend==='openrouter'&&Number(meta.context_length)>0?`<span>${Number(meta.context_length).toLocaleString()} context</span>`:'';
-      const modelDescription=settings.backend==='openrouter'?(meta.name||meta.description||meta.owned_by||'OpenRouter model'):(meta.details?.family||meta.owned_by||t('localModel'));
-      card.innerHTML=`<div class="card-icon">◈</div><h3>${escapeHTML(model)}</h3><p>${escapeHTML(modelDescription)}</p><div class="card-meta"><span>${meta.size?`${(meta.size/1e9).toFixed(1)} GB`:settings.backend==='openrouter'?'Cloud model':t('sizeUnavailable')}</span>${contextDetails}${priceDetails}<span>${info?.vision?escapeHTML(t('vision')):''}</span><span>${info?.thinking?escapeHTML(t('thinking')):''}</span><span>${info?.tools?escapeHTML(t('tools')):''}</span></div><label class="check-field"><input type="checkbox" data-model-bench="${escapeHTML(model)}" ${benchmarkSelected.has(model)?'checked':''}><span><strong>${escapeHTML(t('includeComparison'))}</strong></span></label><button class="btn full" data-use-model="${escapeHTML(model)}">${escapeHTML(t('useModel'))}</button>`;
+      card.innerHTML=`<div class="card-icon">◈</div><h3>${escapeHTML(model)}</h3><p>${escapeHTML(meta.details?.family||meta.owned_by||t('localModel'))}</p><div class="card-meta"><span>${meta.size?`${(meta.size/1e9).toFixed(1)} GB`:t('sizeUnavailable')}</span><span>${info?.vision?escapeHTML(t('vision')):''}</span><span>${info?.thinking?escapeHTML(t('thinking')):''}</span><span>${info?.tools?escapeHTML(t('tools')):''}</span></div><label class="check-field"><input type="checkbox" data-model-bench="${escapeHTML(model)}" ${benchmarkSelected.has(model)?'checked':''}><span><strong>${escapeHTML(t('includeComparison'))}</strong></span></label><button class="btn full" data-use-model="${escapeHTML(model)}">${escapeHTML(t('useModel'))}</button>`;
       card.querySelector('[data-use-model]').addEventListener('click',event=>{event.stopPropagation();const chat=current();settings.model=model;if(chat)chat.model=model;saveSettings();scheduleSave();syncModelSelect();updateCapabilityBadges();ensureCapabilities(model);setInspectorModel();navigate('chat');toast(`Selected ${model}.`);});
       card.querySelector('[data-model-bench]').addEventListener('change',event=>{if(event.target.checked){if(benchmarkSelected.size>=3){event.target.checked=false;toast('Choose no more than three models.');return;}benchmarkSelected.add(model);}else benchmarkSelected.delete(model);});
       container.appendChild(card);
@@ -2903,26 +2642,6 @@
     const completionMessage=task.status==='completed'?`Task “${task.title}” completed.`:task.status==='cancelled'?`Task “${task.title}” was cancelled.`:`Task “${task.title}” finished with an error. Review its conversation.`;
     toast(completionMessage);
   }
-  async function drainQueuedAgentTasks(){
-    if(drainingAgentTaskRuns||running.size)return;
-    drainingAgentTaskRuns=true;
-    try{
-      while(queuedAgentTaskRuns.length&&running.size===0){
-        const id=queuedAgentTaskRuns.shift();
-        const task=tasks.find(entry=>entry.id===id);
-        if(!task||task.status!=='queued')continue;
-        await runTask(task);
-      }
-    }finally{
-      drainingAgentTaskRuns=false;
-      if(queuedAgentTaskRuns.length&&running.size===0){
-        setTimeout(()=>drainQueuedAgentTasks().catch(error=>{
-          console.error('Could not start a queued local task:',error);
-          toast(`Could not start a queued local task: ${error.message || 'unknown error'}`);
-        }),0);
-      }
-    }
-  }
   async function processScheduledTasks(){
     // Leave due tasks in the scheduled state while another run is active. The
     // next scheduler tick will pick them up; no task can become stranded queued.
@@ -3118,11 +2837,6 @@
     if(!chat.model){toast('Select a model before asking.');return;}
     chat.messages.push({role:'user',content:promptText});chat.updated=Date.now();scheduleSave();renderConversationList();renderMessages();await startRun(chat,false);
   }
-  window.localAI?.editor?.onAIRequest?.(promptText => {
-    if (typeof promptText !== 'string' || !promptText.trim()) return;
-    askInCurrentChat(promptText).catch(error => toast(`Editor assistant request failed: ${error.message}`));
-  });
-
   async function summarizeCurrentChat(){
     const chat=current();if(!chat||!chat.messages.length){toast('There is no conversation to summarize.');return;}
     const transcript=chat.messages.slice(-30).map(message=>`${message.role==='user'?'User':'Assistant'}: ${String(message.content||'').slice(0,1800)}`).join('\n\n').slice(0,18000);
@@ -3241,7 +2955,7 @@
   function applyLocalization(){
     const labels=TRANSLATIONS[settings.uiLanguage]||TRANSLATIONS.en;
     document.querySelectorAll('#chatbar [data-view]').forEach(button=>{
-      const label=button.querySelector('span:nth-child(2)');if(label)label.textContent=labels[button.dataset.view]||TRANSLATIONS.en[button.dataset.view]||label.textContent;
+      const label=button.querySelector('span:nth-child(2)');if(label)label.textContent=labels[button.dataset.view]||TRANSLATIONS.en[button.dataset.view];
     });
     const newChatLabel=$('newChatLabel');if(newChatLabel)newChatLabel.textContent=t('newChat');
     if($('viewTitle'))$('viewTitle').textContent=t(activeView);
@@ -3336,10 +3050,9 @@
     };
 
     on('backend', 'change', event => {
-      settings.backend = ['openai','openrouter','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
+      settings.backend = ['openai','anthropic'].includes(event.target.value) ? event.target.value : 'ollama';
       settings.baseUrl = URL_DEFAULTS[settings.backend];
       $('baseUrl').value = settings.baseUrl;
-      syncProviderFields();
       approvedModelServer = '';
       capabilities.clear();
       saveSettings();
@@ -3440,7 +3153,7 @@
     on('visionModel','change',event=>setSetting('visionModel',event.target.value));
     on('clearBrowserData','click',async()=>{try{if(await window.localAI.browser.clearData())toast('Browser data cleared.');}catch(error){toast(error.message);}});
     on('autoCompact','change',event=>setSetting('autoCompact',event.target.checked));
-    on('allowFileWrites','change',event=>{setSetting('allowFileWrites',event.target.checked);if($('allowFileWritesInspector'))$('allowFileWritesInspector').checked=event.target.checked;});
+    on('allowFileWrites','change',event=>{setSetting('allowFileWrites',event.target.checked);window.localAI?.work?.setFileWritesEnabled?.(event.target.checked).catch(error=>toast(error.message));if($('allowFileWritesInspector'))$('allowFileWritesInspector').checked=event.target.checked;});
     on('allowFileWritesInspector','change',event=>{setSetting('allowFileWrites',event.target.checked);if($('allowFileWrites'))$('allowFileWrites').checked=event.target.checked;});
     on('memoryEnabled','change',event=>{setSetting('memoryEnabled',event.target.checked);renderMemory();});
     on('confirmToolCalls','change',event=>setSetting('confirmToolCalls',event.target.checked));
@@ -3636,6 +3349,7 @@
 
   async function initialize() {
     normalizeSettings();
+    await window.localAI?.work?.setFileWritesEnabled?.(settings.allowFileWrites).catch(error=>console.warn('Could not sync Work file-write permission:',error));
     const legacyApiKey=settings.apiKey;
     settings.apiKey='';
     try {

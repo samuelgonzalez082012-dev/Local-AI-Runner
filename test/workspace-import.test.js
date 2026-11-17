@@ -51,21 +51,21 @@ test('folder-backed project roots must resolve to existing directories', async (
 });
 
 
-test('workspace search finds case-insensitive matches with stable line metadata', async () => {
-  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'local-ai-search-test-'));
+test('previewWrite fingerprints the current file version for approval-time conflict checks', async () => {
+  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'local-ai-preview-test-'));
   const workspacePath = path.join(base, 'workspace');
+  const userDataPath = path.join(base, 'user-data');
+  await fs.mkdir(workspacePath);
   try {
-    await fs.mkdir(path.join(workspacePath, 'src'), { recursive: true });
-    await fs.writeFile(path.join(workspacePath, 'src', 'app.js'), 'const first = 1;\nfunction FindMe() {\n  return first;\n}\n', 'utf8');
-    await fs.writeFile(path.join(workspacePath, 'README.md'), 'Nothing relevant here.\n', 'utf8');
-    const workspace = createWorkspaceService({ dialog: {}, app: { getPath: () => path.join(base, 'user-data') } });
+    const workspace = createWorkspaceService({ dialog: {}, app: { getPath: () => userDataPath } });
     await workspace.setFolder(workspacePath);
-    const result = await workspace.search('findme');
-    assert.equal(result.results.length, 1);
-    assert.equal(result.results[0].path, 'src/app.js');
-    assert.equal(result.results[0].line, 2);
-    assert.match(result.results[0].excerpt, /FindMe/);
-    await assert.rejects(() => workspace.search('x'), /at least two characters/i);
+    await fs.writeFile(path.join(workspacePath, 'app.js'), 'const value = 1;\n', 'utf8');
+    const first = await workspace.previewWrite('app.js', 'const value = 2;\n');
+    assert.equal(first.exists, true);
+    assert.match(first.oldHash, /^[a-f0-9]{64}$/);
+    await fs.writeFile(path.join(workspacePath, 'app.js'), 'const value = 3;\n', 'utf8');
+    const second = await workspace.previewWrite('app.js', 'const value = 2;\n');
+    assert.notEqual(first.oldHash, second.oldHash);
   } finally {
     await fs.rm(base, { recursive: true, force: true });
   }

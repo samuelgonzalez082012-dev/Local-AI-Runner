@@ -2,14 +2,6 @@
 
 Local AI Runner is an Electron desktop app for chatting with locally hosted language models and organizing related documents, projects, memories and bounded work tasks.
 
-## Code editor
-
-The shared code editor is available as a full workspace page, a dock beside chat, and a separate Electron window. Open **Code editor** from the navigation, or use the **Editor** control beside the chat composer. The views share open tabs and editor preferences.
-
-The editor includes a VS Code-inspired activity rail, file explorer, workspace-wide text search, tabs with unsaved indicators, syntax-coloured editing, line and cursor status, an output panel, and customizable themes and typography. The AI assistant can explain, debug, refactor, design tests for, or review the selected code (or the active file when no selection exists). AI responses are sent through the configured model in chat; the editor does not silently apply AI-generated changes. Review suggestions and save changes explicitly.
-
-Workspace saves continue to use the app's existing workspace writer and backup behavior. This editor build uses the existing lightweight in-app editing surface; it does not yet bundle the Monaco editor engine or language-server integrations.
-
 ## Requirements
 
 - Windows, macOS or Linux
@@ -41,7 +33,6 @@ The app does not download models. Install and manage models using your inference
 
 - **Ollama:** connect to `http://localhost:11434`. Tool calling uses native model support when available, with a structured request fallback for models that do not advertise native tool calling.
 - **OpenAI-compatible API:** connect to your compatible server URL and provide its API key if required.
-- **OpenRouter:** connect to `https://openrouter.ai/api/v1`, enter an OpenRouter API key, and browse the hosted model catalog. Model cards show published input/output pricing and context length when supplied by OpenRouter. Requests use the OpenAI-compatible Chat Completions API and stream responses; provider usage and charges are managed by OpenRouter.
 - **Anthropic API:** choose **Anthropic API**, use the default `https://api.anthropic.com` URL, and enter an Anthropic API key. The app uses the Anthropic Messages API, including its streaming and native tool-use formats. Remote server approval is required before prompts are sent. API access and any provider charges are managed by Anthropic.
 
 ### Universal tool registry
@@ -49,10 +40,6 @@ The app does not download models. Install and manage models using your inference
 Open **Inspector → Tools** to enable the tool system and manage individual built-in or connected MCP tools. Each registered tool has a validated JSON Schema; arguments are checked again immediately before execution. Workspace writes continue to require the app's native confirmation and backup flow. MCP calls keep their connector approval checks.
 
 The recent activity list stores tool names, source, category, result status, timing and a short error message. It does not store tool arguments, prompts or file contents. The local audit file is kept in the app's user-data folder.
-
-Built-in model tools include local conversation/workspace search, project-document context, bounded CSV/JSON summaries, workspace file listing/reading/search, file creation and editing with confirmation, browser interaction and DuckDuckGo web search, and agent planning. Web search runs in the visible integrated browser, sends the query to DuckDuckGo, and follows the browser's site-approval safeguards. Models can also list/create projects, list/save/delete memories, list/create reusable workflows, and save, schedule or start tasks/workflows. Persistent changes and task runs require an in-app confirmation; scheduled tasks only run while the app is open. Voice input/output, screen snapshots and vision routing are available through their app features. Models without native function calling use the validated structured tool-request fallback.
-
-This is a local desktop workspace, not a clone of hosted ChatGPT or Claude services. Tabular analysis is a bounded local summary (not arbitrary Python execution); connected apps require an MCP server; cloud research, GPT/skill marketplaces, hosted image generation, remote agents and general desktop control need separate providers or integrations and are not implied by the built-in tools.
 
 ## Integrated browser and Cowork agent (1.3.0)
 
@@ -194,3 +181,47 @@ The renderer is intentionally separated into three primary files:
 - `renderer.js` — renderer-side application logic
 
 Electron startup, the isolated preload bridge and local services remain separate so native permissions, secure storage, document parsing and filesystem access do not run in the page renderer.
+
+## Multi-agent Work Manager update
+
+The `feature/ai-workspace-update` implementation adds a dedicated Work Manager view alongside the existing Chat experience.
+
+### Included in this update
+
+- A Work Manager surface with agent team, agent inspector, communication graph, task board, activity timeline, shared project memory and the existing code editor mounted inside Work.
+- The standalone Code editor navigation entry and chat-side editor dock are removed. The editor can still be popped out from Work.
+- A default Planner / Developer 1 / Developer 2 / Reviewer team, custom agent configuration, per-agent model-name overrides, enabled/disabled state and tool-permission metadata.
+- A bounded team run using the configured model connection: Planner produces a plan, up to two Developers produce separate proposals concurrently, and Reviewer evaluates the results. Agent messages and task state are shown in Work Manager.
+- Saved team templates and per-project team configuration.
+- Shared project memory with categories, pinning and explicit user-managed additions/removals.
+- Project-specific task and message persistence.
+- A central read/write lock service with shared reads, exclusive writes, FIFO writer priority, lock leases, renewal and expiration cleanup. Agent write IPC requires a matching active write lock and still asks the user to approve the change; existing workspace backup and atomic-write behavior remains in place.
+- Project-specific panel visibility preferences.
+
+### Current boundaries
+
+- Team runs currently produce plans, implementation proposals and reviews; they do not autonomously apply code changes. The run is explicit about this in its task result. File changes continue to use the existing reviewed editor workflow.
+- Agents use the app's currently selected provider connection. An agent may override the model name within that provider, but independent per-agent provider credentials/routing are not implemented in this increment.
+- The communication graph visualizes the four default roles. Custom agents appear in the team and inspector but are not yet automatically laid out as graph nodes.
+- Panel visibility is configurable and saved. Free-form drag/drop docking, independent panel resizing and per-agent line-level file activity markers remain future UI work.
+- The existing integrated Browser is embedded as a Work Manager panel and remains available as its own full Browser view.
+
+### Validation
+
+Run `npm test` for the automated Node test suite. Electron startup and interactive UI smoke testing must be completed on a desktop with the Electron runtime and display environment available. The automated test suite does not substitute for that desktop validation.
+
+## Work Manager (1.5.x)
+
+The Work view contains a project-scoped AI team, task board, communication graph, activity timeline, shared project memory, the existing code editor and the integrated browser. The default team is Planner, Developer 1, Developer 2 and Reviewer. Additional agents can be configured with their own model-name override and tool permissions.
+
+To run a team task:
+
+1. Connect the app to Ollama, an OpenAI-compatible endpoint or Anthropic in **Connections** and select a model in the top bar.
+2. Choose a project workspace folder in **Connections**.
+3. Enable **Allow approved file creation and edits** if developers should be able to request code changes.
+4. Open **Work**, create a task and run it. The Planner creates distinct workstreams; enabled team members work within those assignments; the Reviewer inspects the resulting workspace.
+5. Approve or cancel each native file-change confirmation. Existing files are backed up before approved edits. Review the final task notes and messages before marking the task complete.
+
+Agent file access is limited to the selected workspace and supported text/source files. File reads use shared locks; file writes use exclusive locks and a file-version check after the approval dialog. Agents can send task-scoped messages and propose project-memory entries. Memory proposals do not become shared instructions until approved.
+
+Work Manager panels can be hidden, reordered by dragging their headers and resized. Team templates preserve numbered versions. Agent model-name overrides use the currently configured app provider; separate simultaneous provider credentials per agent are not yet supported.

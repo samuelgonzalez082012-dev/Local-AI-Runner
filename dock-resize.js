@@ -33,10 +33,6 @@
     return null;
   }
 
-  function maxDockWidth(containerWidth, otherPanelWidth = 0, gap = 12) {
-    return Math.max(0, Math.floor(Number(containerWidth) - Number(otherPanelWidth) - Number(gap)));
-  }
-
   function mount(win) {
     const doc = win.document;
     const chat = doc.getElementById('chatView');
@@ -49,7 +45,7 @@
     chat.dataset.dockResizeReady = 'true';
 
     const preferredWidths = { browser: null, editor: null };
-    const activeDrag = { pointerId: null, panel: null, edge: null, startWidth: 0, startX: 0, min: 0, max: 0, latestX: 0, frame: 0, handle: null };
+    const activeDrag = { pointerId: null, panel: null, edge: null, startWidth: 0, startX: 0, min: 0, max: 0, handle: null };
 
     function storageGet(id) {
       try {
@@ -84,7 +80,12 @@
       const min = mobile ? MIN_MOBILE_WIDTH : MIN_DESKTOP_WIDTH;
       const otherId = id === 'browser' ? 'editor' : 'browser';
       const otherWidth = otherVisible(id) ? panels[otherId].getBoundingClientRect().width : 0;
-      const max = maxDockWidth(containerWidth, otherWidth);
+      if (mobile) {
+        const max = otherWidth ? containerWidth - otherWidth - 20 : containerWidth - 40;
+        return { min, max: Math.max(min, max) };
+      }
+      const chatMinimum = otherWidth ? 360 : 420;
+      const max = containerWidth - chatMinimum - otherWidth - 12;
       return { min, max: Math.max(min, max) };
     }
 
@@ -111,7 +112,6 @@
     }
 
     function refresh() {
-      if (activeDrag.pointerId !== null) return;
       Object.keys(panels).forEach(id => {
         const panel = panels[id];
         const handle = panel.querySelector('.dock-resize-handle');
@@ -124,31 +124,14 @@
           const width = panel.getBoundingClientRect().width;
           updateHandle(handle, width, boundsFor(id));
         }
-        if (isVisible(panel)) {
-          const bounds = boundsFor(id);
-          const width = panel.getBoundingClientRect().width;
-          if (width > bounds.max || width < bounds.min) {
-            applyWidth(id, width, false);
-          }
+        if (preferredWidths[id] !== null && isVisible(panel)) {
+          applyWidth(id, preferredWidths[id], false);
         }
       });
     }
 
-    function applyDragPosition() {
-      activeDrag.frame = 0;
-      if (activeDrag.pointerId === null || !activeDrag.panel) return;
-      const width = widthFromDrag(activeDrag.startWidth, activeDrag.startX, activeDrag.latestX, activeDrag.edge, activeDrag.min, activeDrag.max);
-      activeDrag.panel.style.setProperty('--dock-panel-width', width + 'px');
-      updateHandle(activeDrag.handle, width, { min: activeDrag.min, max: activeDrag.max });
-    }
-
     function finishDrag(event, save) {
       if (activeDrag.pointerId === null || (event && event.pointerId !== activeDrag.pointerId)) return;
-      if (activeDrag.frame) {
-        win.cancelAnimationFrame(activeDrag.frame);
-        activeDrag.frame = 0;
-        applyDragPosition();
-      }
       if (save && activeDrag.panel) {
         const id = activeDrag.panel === panels.browser ? 'browser' : 'editor';
         const width = activeDrag.panel.getBoundingClientRect().width;
@@ -172,7 +155,6 @@
       activeDrag.edge = edgeFor(id);
       activeDrag.startWidth = panel.getBoundingClientRect().width;
       activeDrag.startX = event.clientX;
-      activeDrag.latestX = event.clientX;
       activeDrag.min = bounds.min;
       activeDrag.max = bounds.max;
       activeDrag.handle = handle;
@@ -212,8 +194,9 @@
 
     win.addEventListener('pointermove', event => {
       if (activeDrag.pointerId === null || event.pointerId !== activeDrag.pointerId) return;
-      activeDrag.latestX = event.clientX;
-      if (!activeDrag.frame) activeDrag.frame = win.requestAnimationFrame(applyDragPosition);
+      const id = activeDrag.panel === panels.browser ? 'browser' : 'editor';
+      const width = widthFromDrag(activeDrag.startWidth, activeDrag.startX, event.clientX, activeDrag.edge, activeDrag.min, activeDrag.max);
+      applyWidth(id, width, false);
       event.preventDefault();
     }, { capture: true });
     win.addEventListener('pointerup', event => finishDrag(event, true), true);
@@ -222,7 +205,7 @@
     win.addEventListener('resize', refresh);
     win.addEventListener('editor:dock-layout', refresh);
     const observer = new win.MutationObserver(refresh);
-    observer.observe(chat, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    observer.observe(chat, { subtree: true, attributes: true, attributeFilter: ['hidden', 'class'] });
     const resizeObserver = new win.ResizeObserver(refresh);
     resizeObserver.observe(chat);
     resizeObserver.observe(panels.browser);
@@ -230,5 +213,5 @@
     refresh();
   }
 
-  return { clampWidth, widthFromDrag, widthFromKey, maxDockWidth, mount };
+  return { clampWidth, widthFromDrag, widthFromKey, mount };
 });

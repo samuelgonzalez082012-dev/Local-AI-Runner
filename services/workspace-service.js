@@ -158,7 +158,7 @@ function createWorkspaceService({ dialog, app }) {
     const existing = await fs.lstat(filePath).catch(() => null);
     if (existing && (existing.isSymbolicLink() || !existing.isFile() || existing.size > MAX_READ_BYTES)) throw new Error('Existing file cannot be safely backed up.');
     const before = existing ? await fs.readFile(filePath, 'utf8') : '';
-    return { path: String(relativePath), exists: Boolean(existing), oldBytes: existing?.size || 0, newBytes: Buffer.byteLength(value, 'utf8'), diff: makeDiffPreview(before, value) };
+    return { path: String(relativePath), exists: Boolean(existing), oldBytes: existing?.size || 0, oldHash: crypto.createHash('sha256').update(before).digest('hex'), newBytes: Buffer.byteLength(value, 'utf8'), diff: makeDiffPreview(before, value) };
   }
 
   async function list(relativePath = '') {

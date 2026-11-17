@@ -1,25 +1,5 @@
 # Changelog
 
-## 1.4.2 — VS Code-style editor workbench polish
-
-- Updated the editor workbench to a VS Code-inspired dark palette, compact title bar, activity rail, Explorer, tabs, breadcrumbs, output area, and status bar.
-- Added prominent, language-colored file glyphs for HTML, JavaScript, TypeScript, CSS, JSON, Python, Java, C/C++, C#, Markdown, YAML, SQL, Rust, Go, PHP, Ruby, shell, and common configuration formats.
-- Changed the Explorer from single-folder navigation to an expandable, nested folder tree with lazy directory loading.
-- Added collapsible editor tabs, horizontal tab scrolling, active-tab state, and middle-click tab closing.
-- Kept the existing workspace, save/backup, AI chat bridge, search, preferences, and detached editor integration intact.
-- Automated tests: 43 passing. Electron GUI smoke testing is still required on a machine with dependencies installed.
-
-## 1.4.1 — Editor workspace improvements
-
-- Reworked the shared editor shell with a VS Code-inspired activity rail, Explorer/search area, editor breadcrumbs, output panel, and AI assistant sidebar.
-- Added workspace-wide text search with bounded results and direct navigation to matching lines.
-- Added editor-to-chat AI actions for explaining, debugging, refactoring, test design, and code review. Selected code is preferred; otherwise the active file is included.
-- Routed editor AI requests through a validated Electron IPC bridge so the pop-out window reuses the main app's configured model and credentials.
-- Kept AI output advisory-only: suggestions appear in chat and are not written to project files automatically.
-- Fixed malformed Save button markup and improved editor status feedback.
-- Added Ctrl/Cmd+P quick-open, Ctrl/Cmd+F in-file find, Ctrl/Cmd+Shift+F workspace search, Ctrl/Cmd+S save, and line-aware Tab / Shift+Tab indentation.
-- Added regression coverage for editor wiring and workspace search. Automated suite: 43 tests passing.
-
 ## 1.4.0 — Game-speed browser and auto-approve
 
 - Added **Auto-approve browser actions** (Inspector → Tools). When on, the assistant does not ask before submitting forms, clicking risky buttons, running page scripts or visiting new public sites. Turning it on shows a warning first. Passwords, payment and one-time-code fields are still never filled, and addresses on your own network still ask.
@@ -76,3 +56,29 @@
 ## 1.2.1
 
 See the 1.2.1 section in `README.md` for the previous release notes.
+
+## 1.5.0 — Multi-agent Work Manager foundation
+
+- Added a dedicated Work Manager workspace and moved the primary code editor into Work.
+- Added a configurable default four-agent team, agent inspector, task board, communication feed and team-run pipeline.
+- Added project-scoped shared memory, saved team templates and task/message persistence.
+- Added a central file-lock manager with shared read locks, exclusive write locks, queueing and lease recovery.
+- Added tests for Work Manager persistence, team templates, lock contention and path validation.
+- Desktop Electron testing remains required before calling this release fully verified.
+
+## 1.5.1 — Work Manager implementation pass
+
+- Added bounded, tool-using agent execution for workspace listing, source-file reading/searching and file updates.
+- Added explicit read/write locks around agent file reads and writes; writes require the existing file-write setting, a native per-change approval, an exclusive lock, a version fingerprint check and the workspace backup/atomic-write service.
+- Changed developer runs from proposal-only output to actual approved workspace edits, with Planner-generated workstreams, configurable concurrency and a read-only Reviewer pass.
+- Added agent-to-agent/team messaging tools and task-scoped message retrieval.
+- Added pending shared-memory proposals from agents, with user approval or rejection.
+- Added file-operation activity, draggable/reorderable Work Manager panels, CSS panel resizing and clickable communication graph edges that open message details.
+- Added regression tests for approval-time file version fingerprints and pending-memory approval.
+
+- Added task-scoped agent-to-agent messaging and message retrieval, including animated graph edges with message inspection.
+- Added cancellable queued file-lock requests and waiting-agent polling so a queued agent can acquire its promoted lock rather than abandoning it.
+- Added numbered immutable team-template versions and persisted panel ordering and resized widths.
+- Added README instructions for configuring and running Work Manager tasks.
+
+- Enforced the approved-file-write setting in the Electron main process as well as the renderer before an agent write can be approved.
