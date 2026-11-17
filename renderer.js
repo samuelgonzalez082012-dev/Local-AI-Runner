@@ -1902,17 +1902,20 @@
       const timeoutSignal=Number(timeoutMs)>0?AbortSignal.timeout(Math.max(1000,Math.min(7200000,Number(timeoutMs)))):null;
       const runSignal=signal&&timeoutSignal?AbortSignal.any([signal,timeoutSignal]):signal||timeoutSignal||new AbortController().signal;
       const roundLimit=Math.max(1,Math.min(40,Number(maxSteps)||8));
-      const model=String(agent?.model||settings.model||'').trim();
-      if(!model) throw new Error('Choose a model in the top bar before running a team task.');
-      if(agent?.provider&&agent.provider!=='inherit') throw new Error(`Agent provider “${agent.provider}” is not the active configured provider. Select “Use default provider” or switch the app connection before running this agent.`);
-      await ensureServerApproved();
+      const provider=agent?.provider&&agent.provider!=='inherit'?agent.provider:settings.backend;
+      if(provider!=='openrouter'&&provider!==settings.backend)throw new Error(`Agent provider “${provider}” is not the active application provider.`);
+      const model=String(agent?.model||(provider===settings.backend?settings.model:'')).trim();
+      if(!model) throw new Error(provider==='openrouter'?'Choose an OpenRouter model for this agent.':'Choose a model in the top bar before running a team task.');
+      if(provider==='openrouter'){const status=await window.localAI.openRouter.status();if(!status.connected)throw new Error('Connect an OpenRouter API key in Connections before running this agent.');await ensureServerApproved('https://openrouter.ai/api/v1');}
+      else await ensureServerApproved();
       const permittedDefinitions=WORK_AGENT_TOOLS.filter(item=>{
         const name=item.function.name;
         return name==='write_workspace_file'?(agent?.tools||[]).includes('write-proposal'):name==='propose_project_memory'?(agent?.tools||[]).includes('memory-propose'):['send_agent_message','read_agent_messages'].includes(name)?(agent?.tools||[]).includes('message'):(agent?.tools||[]).includes('read');
       }).map(item=>item.function);
-      const modelInfo=settings.backend==='ollama'?capabilities.get(model):null;
-      const nativeTools=settings.backend!=='ollama'||!!(modelInfo?.known&&modelInfo.tools);
-      const permitted=nativeTools?permittedDefinitions.map(definition=>(TOOL_PROVIDER_ADAPTERS[settings.backend]||TOOL_PROVIDER_ADAPTERS.openai)(definition)):[];
+      const modelInfo=provider==='ollama'?capabilities.get(model):null;
+      const nativeTools=provider!=='ollama'||!!(modelInfo?.known&&modelInfo.tools);
+      const toolAdapter=provider==='openrouter'?TOOL_PROVIDER_ADAPTERS.openai:(TOOL_PROVIDER_ADAPTERS[provider]||TOOL_PROVIDER_ADAPTERS.openai);
+      const permitted=nativeTools?permittedDefinitions.map(definition=>toolAdapter(definition)):[];
       const fallback=nativeTools?{prompt:'',names:[]}:window.LocalAIRunnerToolFallback?.buildToolFallbackPrompt(permittedDefinitions)||{prompt:'',names:[]};
       const allowedFallbackNames=new Set(fallback.names);
       const system=[settings.system,agent?.instructions||'',`You are ${agent?.name||'an AI team agent'} with role ${agent?.role||'assistant'}. You are working in a selected local project workspace. Inspect relevant files before editing. Use workspace tools for real file operations. File writes require user approval and an exclusive lock. Do not claim a file changed unless write_workspace_file confirms success. Respect the task scope and shared project instructions.`].filter(Boolean).join('\n\n');
@@ -1920,7 +1923,7 @@
       let finalText='';
       for(let round=0;round<roundLimit;round++) {
         if(runSignal.aborted) throw new DOMException('The agent run was cancelled.','AbortError');
-        const result=await streamCompletion({model,messages,tools:permitted,toolFallbackPrompt:fallback.prompt,signal:runSignal,maxTokensOverride:maxTokens,onDelta:()=>{}});
+        const result=await streamCompletion({model,messages,tools:permitted,toolFallbackPrompt:fallback.prompt,signal:runSignal,maxTokensOverride:maxTokens,providerOverride:provider,onDelta:()=>{}});
         if(!nativeTools&&result.toolCalls.some(call=>!allowedFallbackNames.has(call.name)))throw new Error('The local model requested a tool outside this agent’s permission set.');
         finalText=result.content||finalText;
         if(!result.toolCalls?.length) break;
