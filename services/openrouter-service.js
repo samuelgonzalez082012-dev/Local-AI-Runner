@@ -3,19 +3,24 @@ const { atomicWriteFile } = require('./atomic-file');
 const BASE = 'https://openrouter.ai/api/v1';
 function createOpenRouterService({ safeStorage, fs, path, userData }) {
   const keyPath = path.join(userData, 'openrouter-key.bin');
+  function secureStorageAvailable() {
+    if (!safeStorage.isEncryptionAvailable()) return false;
+    if (process.platform === 'linux' && typeof safeStorage.getSelectedStorageBackend === 'function' && safeStorage.getSelectedStorageBackend() === 'basic_text') return false;
+    return true;
+  }
   async function getKey() {
     try {
       const stat = await fs.lstat(keyPath);
       if (stat.isSymbolicLink() || !stat.isFile() || stat.size > 16384) return '';
       const encrypted = await fs.readFile(keyPath);
-      return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(encrypted) : '';
+      return secureStorageAvailable() ? safeStorage.decryptString(encrypted) : '';
     } catch { return ''; }
   }
   async function setKey(value) {
     const key = String(value || '').trim();
     if (key && !key.startsWith('sk-or-')) throw new Error('That does not look like an OpenRouter API key.');
     if (!key) { await fs.rm(keyPath, { force: true }); return { connected: false }; }
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure credential storage is unavailable on this device.');
+    if (!secureStorageAvailable()) throw new Error('OS-backed secure credential storage is unavailable on this device. The OpenRouter key was not saved.');
     await fs.mkdir(userData, { recursive: true });
     await atomicWriteFile(keyPath, safeStorage.encryptString(key), { mode: 0o600 });
     return { connected: !!key };
