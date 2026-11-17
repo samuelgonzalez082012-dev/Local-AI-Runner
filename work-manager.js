@@ -4,7 +4,7 @@
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   let state = null;
   let selectedAgent = 'planner';
-  let selectedTask = '';
+  let selectedTask = '';\n  let activeWorkView = 'overview';\n  let activityFilter = 'all';
   const agentDefaults = [
     { id:'planner', name:'Planner', role:'planner', provider:'inherit', model:'', instructions:'Coordinate the team, break work into tasks, and review decisions.', tools:['read','plan','message'], enabled:true },
     { id:'developer-1', name:'Developer 1', role:'developer', provider:'inherit', model:'', instructions:'Implement assigned development tasks within the agreed scope.', tools:['read','write-proposal','message'], enabled:true },
@@ -49,7 +49,25 @@
     list.innerHTML=state.memory.length?state.memory.map(item=>`<article class="work-memory-item ${item.status==='pending'?'pending':''}"><div><strong>${escapeHtml(item.title)}</strong><span class="memory-category">${escapeHtml(item.category)}${item.pinned?' · Pinned':''} · ${escapeHtml(item.status||'approved')}</span></div><p>${escapeHtml(item.content)}</p>${item.proposedBy?`<small>Proposed by ${escapeHtml(agentName(item.proposedBy))}</small>`:''}<div class="work-memory-actions">${item.status==='pending'?`<button class="btn small primary" data-memory-approve="${escapeHtml(item.id)}">Approve</button>`:''}<button class="btn small" data-memory-remove="${escapeHtml(item.id)}">${item.status==='pending'?'Reject':'Remove'}</button></div></article>`).join(''):'<p class="muted-text">No shared project memory yet. Add architecture notes, rules, decisions and restrictions for the whole team.</p>';
   }
   function renderFileActivity(){const host=byId('workFileActivity');if(!host||!state)return;const active=state.locks||[];const queued=state.waiting||[];host.innerHTML=active.length||queued.length?[...active.map(lock=>`<span class="file-lock ${lock.mode}"><b>${escapeHtml(lock.mode==='write'?'Writing':'Reading')}</b> ${escapeHtml(lock.file)} · ${escapeHtml(agentName(lock.agentId))}</span>`),...queued.map(ticket=>`<span class="file-lock waiting"><b>Waiting to ${escapeHtml(ticket.mode)}</b> ${escapeHtml(ticket.file)} · ${escapeHtml(agentName(ticket.agentId))}</span>`)].join(''):'No active agent file operations.';}
-  function render() { if(!state)return; renderAgents();renderGraph();renderTasks();renderActivity();renderMemory();renderFileActivity();applyLayout(); }
+  function render() { if(!state)return; renderAgents();renderGraph();renderTasks();renderActivity();renderMemory();renderFileActivity();applyLayout();updateOverview();applyWorkView(); }
+  function updateOverview(){
+    const tasks=state.tasks||[], agents=state.team?.agents||[], memory=state.memory||[];
+    const open=tasks.filter(task=>!['completed','cancelled'].includes(task.status)).length;
+    const attention=tasks.filter(task=>['blocked','failed','review'].includes(task.status)).length;
+    const approved=memory.filter(item=>(item.status||'approved')==='approved').length;
+    const set=(id,value)=>{const node=byId(id);if(node)node.textContent=String(value);};
+    set('workMetricAgents',agents.filter(agent=>agent.enabled).length);
+    set('workMetricOpen',open);set('workMetricAttention',attention);set('workMetricMemory',approved);
+    set('workOverviewUpdated',`Updated ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`);
+  }
+  function applyWorkView(){
+    const root=byId('workView');if(!root)return;
+    root.dataset.activeView=activeWorkView;
+    document.querySelectorAll('[data-work-view]').forEach(tab=>{const active=tab.dataset.workView===activeWorkView;tab.classList.toggle('active',active);if(active)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');});
+    byId('workOverview')?.classList.toggle('work-view-hidden',activeWorkView!=='overview');
+    document.querySelectorAll('[data-work-panel]').forEach(panel=>{const views=(panel.dataset.workViews||'').split(/\\s+/);panel.classList.toggle('work-view-hidden',!views.includes(activeWorkView));});
+  }
+  function setWorkView(view){if(!['overview','team','tasks','activity','workspace','knowledge'].includes(view))return;activeWorkView=view;applyWorkView();}
   function applyLayout(){const hidden=new Set(state?.layout?.hidden||[]);const order=state?.layout?.panels||[];document.querySelectorAll('[data-work-panel]').forEach(panel=>{panel.hidden=hidden.has(panel.dataset.workPanel);panel.style.order=String(Math.max(0,order.indexOf(panel.dataset.workPanel)));const width=Number(state?.layout?.widths?.[panel.dataset.workPanel]);panel.style.width=width>=220?`${width}px`:'';});}
   async function saveTeam() {
     if(!state)return;
@@ -118,6 +136,8 @@
     try{await window.localAI.work.sendMessage({from:'planner',to:task.assignedTo,taskId,body});await refresh();}catch(error){toast(error.message);}
   }
   function bind(){
+    document.querySelectorAll('[data-work-view]').forEach(tab=>tab.addEventListener('click',()=>setWorkView(tab.dataset.workView)));
+    byId('workActivityFilter')?.addEventListener('change',event=>{activityFilter=event.target.value;renderActivity();});
     byId('saveWorkTeam')?.addEventListener('click',saveTeam);
     byId('customizeWorkLayout')?.addEventListener('click',()=>{const hidden=new Set(state?.layout?.hidden||[]);document.querySelectorAll('#workLayoutForm input[name=panel]').forEach(input=>input.checked=!hidden.has(input.value));byId('workLayoutDialog').showModal();});
     byId('workLayoutForm')?.addEventListener('submit',async event=>{event.preventDefault();const hidden=[...document.querySelectorAll('#workLayoutForm input[name=panel]:not(:checked)')].map(input=>input.value);try{await window.localAI.work.setLayout({panels:['team','inspector','graph','tasks','timeline','memory','editor','browser'],hidden});byId('workLayoutDialog').close();await refresh();}catch(error){toast(error.message);}});
