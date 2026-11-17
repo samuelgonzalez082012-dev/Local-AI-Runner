@@ -40,7 +40,7 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     setApiKey(value) { return ipcRenderer.invoke('credentials:set-api-key', value); }
   }),
   editor: Object.freeze({
-    askAI(prompt) { return ipcRenderer.invoke('editor:ai-request', String(prompt || '')); },
+    askAI(prompt) { ipcRenderer.send('editor:ai-request', String(prompt || '')); return true; },
     onAIRequest(callback) { return subscribe('editor:ai-request', callback); },
     openWindow() { return ipcRenderer.invoke('editor:open-window'); },
     getSync() { return ipcRenderer.invoke('editor:sync:get'); },
