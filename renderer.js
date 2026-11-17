@@ -683,6 +683,7 @@
   function requestHeaders(method = 'GET') {
     const headers = { Accept: 'application/json' };
     if (method === 'POST') headers['Content-Type'] = 'application/json';
+    if (settings.backend === 'openrouter') headers['X-Title'] = 'Local AI Runner';
     if (settings.backend === 'anthropic') {
       headers['anthropic-version'] = '2026-10-21';
       if (settings.apiKey) headers['x-api-key'] = settings.apiKey;
