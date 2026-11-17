@@ -109,6 +109,37 @@ async function loadTree(root,dir=''){
   root.querySelector('.editor-workspace-name').textContent=state.workspace.name;
  }catch(error){list.innerHTML='<div class="editor-tree-message">'+esc(error.message)+'</div>';}
 }
+async function searchWorkspace(root,term){
+ const resultsPanel=root.querySelector('.editor-search-results');
+ if(!resultsPanel)return;
+ resultsPanel.hidden=false;
+ resultsPanel.innerHTML='<div class="editor-tree-message">Searching workspace…</div>';
+ try{
+  const response=await window.localAI.workspace.search(term);
+  const matches=Array.isArray(response?.results)?response.results:[];
+  resultsPanel.replaceChildren();
+  if(!matches.length){resultsPanel.innerHTML='<div class="editor-tree-message">No matches found.</div>';}
+  matches.forEach(result=>{
+   const button=document.createElement('button');button.type='button';button.className='editor-search-result';
+   button.innerHTML='<strong>'+esc(result.path)+':'+Number(result.line||1)+'</strong><small>'+esc(result.excerpt||'')+'</small>';
+   button.addEventListener('click',async()=>{
+    await openFile(result.path);
+    const tab=state.tabs.find(item=>item.path===result.path);
+    const input=root.querySelector('.editor-input');
+    if(!tab||!input)return;
+    const lines=tab.content.split(/\\r?\\n/);
+    const lineIndex=Math.max(0,Math.min(lines.length-1,Number(result.line||1)-1));
+    const before=lines.slice(0,lineIndex).join('\\n');
+    const lineText=lines[lineIndex]||'';
+    const relative=lineText.toLowerCase().indexOf(term.toLowerCase());
+    const offset=(before?before.length+1:0)+Math.max(0,relative);
+    input.focus();input.setSelectionRange(offset,offset+term.length);
+   });
+   resultsPanel.append(button);
+  });
+  if(response?.capped){const note=document.createElement('p');note.className='editor-search-capped';note.textContent='Search reached the workspace scan limit. Narrow the search term or search a smaller folder.';resultsPanel.append(note);}
+ }catch(error){resultsPanel.innerHTML='<div class="editor-tree-message">'+esc(error.message)+'</div>';}
+}
 async function openFile(path){
  if(state.tabs.some(t=>t.path===path)){state.active=path;roots.forEach(render);sync();return;}
  try{const content=await window.localAI.workspace.read(path);state.tabs.push({path,content,dirty:false});state.active=path;roots.forEach(render);sync();}
@@ -167,7 +198,7 @@ function preferencePanel(){
  return '<div class="editor-custom-panel" hidden><div class="editor-custom-head"><div><strong>Editor appearance</strong><small>Changes apply to the editor in every window.</small></div><button type="button" class="editor-custom-close" data-action="customize">×</button></div><label>Theme<select data-pref="theme"><option value="midnight">Midnight</option><option value="graphite">Graphite</option><option value="light">Light</option><option value="ocean">Ocean</option><option value="forest">Forest</option><option value="custom">Custom colors</option></select></label><label>Code font<select data-pref="fontFamily"><option value="cascadia">Cascadia Code</option><option value="consolas">Consolas</option><option value="system">System monospace</option><option value="fira">Fira Code</option><option value="jetbrains">JetBrains Mono</option></select></label><div class="editor-custom-grid"><label>Font size <output data-output="fontSize"></output><input type="range" min="11" max="22" step="1" data-pref="fontSize"></label><label>Line height <output data-output="lineHeight"></output><input type="range" min="1.2" max="2.2" step="0.1" data-pref="lineHeight"></label><label>Tab size<select data-pref="tabSize"><option value="2">2 spaces</option><option value="4">4 spaces</option><option value="8">8 spaces</option></select></label><label class="editor-check"><input type="checkbox" data-pref="lineNumbers"> Show line numbers</label></div><div class="editor-colors"><label>Background<input type="color" data-pref="background"></label><label>Panel<input type="color" data-pref="panel"></label><label>Text<input type="color" data-pref="text"></label><label>Accent<input type="color" data-pref="accent"></label><label>Keywords<input type="color" data-pref="keyword"></label><label>Strings<input type="color" data-pref="string"></label><label>Numbers<input type="color" data-pref="number"></label><label>Comments<input type="color" data-pref="comment"></label></div><div class="editor-custom-actions"><button type="button" class="btn small" data-action="reset-preferences">Reset</button><button type="button" class="btn small primary" data-action="close-customize">Done</button></div></div>';
 }
 function mount(root){
- root.innerHTML='<div class="editor-shell"><div class="editor-toolbar"><div class="editor-workspace-label"><span class="editor-live-dot"></span><span class="editor-workspace-name">Workspace</span></div><div class="editor-toolbar-actions"><button type="button" class="btn small" data-action="refresh">↻ Refresh</button><button type="button" class="btn small" data-action="import">⇧ Import file</button><button type="button" class="btn small" data-action="new">＋ New file</button><button type="button" class="btn small primary editor-save" data-action="save" disabled>Save</button><button type="button" class="btn small" data-action="customize">Customize</button><button type="button" class="btn small" data-action="popout">↗ Pop out</button></div></div>'+preferencePanel()+'<div class="editor-layout"><aside class="editor-explorer"><div class="editor-explorer-head"><strong>EXPLORER</strong><button type="button" data-action="refresh" title="Refresh files">↻</button></div><div class="editor-tree"></div></aside><section class="editor-main"><div class="editor-tabs" role="tablist"></div><div class="editor-work-area"><div class="editor-empty"><div class="editor-empty-mark">⌘</div><strong>Open a file to start editing</strong></div></div><div class="editor-status"><span class="editor-file-path">No file selected</span><span class="editor-position">Ln 1, Col 1</span><span class="editor-language">TEXT</span></div></section></div></div>';
+ root.innerHTML='<div class="editor-shell"><div class="editor-toolbar"><div class="editor-workspace-label"><span class="editor-live-dot"></span><span class="editor-workspace-name">Workspace</span></div><div class="editor-toolbar-actions"><button type="button" class="btn small" data-action="refresh">↻ Refresh</button><button type="button" class="btn small" data-action="import">⇧ Import file</button><button type="button" class="btn small" data-action="new">＋ New file</button><button type="button" class="btn small primary editor-save" data-action="save" disabled>Save</button><button type="button" class="btn small" data-action="customize">Customize</button><button type="button" class="btn small" data-action="popout">↗ Pop out</button></div></div>'+preferencePanel()+'<div class="editor-layout"><aside class="editor-explorer"><div class="editor-explorer-head"><strong>EXPLORER</strong><button type="button" data-action="refresh" title="Refresh files">↻</button></div><label class="editor-search-wrap"><span>⌕</span><input class="editor-search-input" type="search" placeholder="Search workspace…" aria-label="Search workspace files and contents"></label><div class="editor-tree"></div><div class="editor-search-results" hidden></div></aside><section class="editor-main"><div class="editor-tabs" role="tablist"></div><div class="editor-work-area"><div class="editor-empty"><div class="editor-empty-mark">⌘</div><strong>Open a file to start editing</strong></div></div><div class="editor-status"><span class="editor-file-path">No file selected</span><span class="editor-position">Ln 1, Col 1</span><span class="editor-language">TEXT</span></div></section></div></div>';
  root.addEventListener('click',event=>{
   const button=event.target.closest('[data-action]');if(!button||!root.contains(button))return;
   const action=button.dataset.action;
@@ -180,7 +211,13 @@ function mount(root){
   if(action==='close-customize'){root.querySelector('.editor-custom-panel').hidden=true;return;}
   if(action==='reset-preferences'){applyPreferences({...defaults},true);syncPreferenceControls(root.querySelector('.editor-custom-panel'));return;}
  });
+ let editorSearchTimer=null;
  root.addEventListener('input',event=>{
+  if(event.target.matches('.editor-search-input')){
+   clearTimeout(editorSearchTimer);const term=event.target.value.trim();
+   if(term.length<2){root.querySelector('.editor-search-results').hidden=true;root.querySelector('.editor-search-results').replaceChildren();root.querySelector('.editor-tree').hidden=false;return;}
+   root.querySelector('.editor-tree').hidden=true;editorSearchTimer=setTimeout(()=>searchWorkspace(root,term),220);return;
+  }
   const control=event.target.closest('[data-pref]');if(control&&root.contains(control)){
    const key=control.dataset.pref;let value=control.type==='checkbox'?control.checked:control.type==='range'?Number(control.value):control.value;
    if(key==='tabSize')value=Number(value);
