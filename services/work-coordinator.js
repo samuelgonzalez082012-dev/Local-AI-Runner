@@ -73,7 +73,7 @@ function createWorkCoordinator({ app, workspace }) {
     const id = cleanText(agent.id, 64).toLowerCase().replace(/[^a-z0-9_-]/g, '-');
     const name = cleanText(agent.name, 80);
     if (!id || !name) throw new Error('Every agent needs an ID and a name.');
-    return { id, name, role: cleanText(agent.role, 40) || 'custom', provider: cleanText(agent.provider, 60) || 'inherit', model: cleanText(agent.model, 160), instructions: cleanText(agent.instructions, 8000), tools: Array.isArray(agent.tools) ? [...new Set(agent.tools.filter(x => typeof x === 'string').slice(0, 30))] : ['read', 'message'], enabled: agent.enabled !== false };
+    return { id, name, role: cleanText(agent.role, 40) || 'custom', provider: ['inherit','openrouter'].includes(cleanText(agent.provider, 60)) ? cleanText(agent.provider, 60) : 'inherit', model: cleanText(agent.model, 200), instructions: cleanText(agent.instructions, 8000), tools: Array.isArray(agent.tools) ? [...new Set(agent.tools.filter(x => typeof x === 'string').slice(0, 30))] : ['read', 'message'], enabled: agent.enabled !== false };
   }
   async function saveTeam(value) {
     if (!value || !Array.isArray(value.agents) || value.agents.length < 1 || value.agents.length > 16) throw new Error('A team must contain between 1 and 16 agents.');
