@@ -735,3 +735,54 @@ body.dock-resizing * {
 .work-memory-actions{display:flex;gap:7px;margin-top:8px}
 .work-memory-item.pending{border-color:rgba(220,175,90,.45);background:rgba(220,175,90,.045)}
 .work-memory-actions{display:flex;gap:7px;margin-top:8px}
+
+
+/* Work Manager command-center navigation and monitoring-first overview */
+.work-manager-view{padding:26px clamp(16px,2.4vw,34px);gap:16px}
+.work-heading{align-items:flex-start;gap:18px}
+.work-heading>div:first-child{min-width:240px}
+.work-heading h1{letter-spacing:-.035em;font-size:clamp(25px,2.3vw,34px)}
+.work-heading-actions{flex-wrap:wrap;justify-content:flex-end}
+.work-view-nav{display:flex;align-items:center;gap:5px;overflow-x:auto;padding:5px;background:var(--panel-2,#1a2330);border:1px solid var(--border);border-radius:11px;width:max-content;max-width:100%}
+.work-view-tab{border:0;background:transparent;color:var(--muted);padding:9px 14px;border-radius:8px;font-size:12px;font-weight:650;white-space:nowrap}
+.work-view-tab:hover{color:var(--text);background:rgba(255,255,255,.045)}
+.work-view-tab.active{color:var(--text);background:var(--panel-3,#202c3b);box-shadow:inset 0 0 0 1px var(--border-soft)}
+.work-overview{display:grid;gap:13px}
+.work-overview-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+.work-overview-intro h2{font-size:17px;margin:3px 0}
+.work-overview-intro p{font-size:12px;color:var(--muted);margin:0}
+.work-overview-updated{font-size:10px;color:var(--muted);white-space:nowrap}
+.work-metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}
+.work-metric{display:grid;gap:5px;padding:14px 15px;background:var(--panel);border:1px solid var(--border);border-radius:11px;min-width:0}
+.work-metric span{font-size:11px;color:var(--muted)}
+.work-metric strong{font-size:25px;line-height:1.15;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.work-metric small{font-size:10px;color:var(--subtle)}
+.work-view-hidden{display:none!important}
+.work-layout{grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-flow:row;gap:13px;min-height:0}
+.work-layout>.work-panel{grid-column:auto;min-height:220px;resize:none}
+.work-layout>.work-graph-panel{grid-column:span 2;min-height:400px}
+.work-layout>.work-task-panel{grid-column:span 1}
+.work-layout>.work-activity-panel{grid-column:span 1}
+.work-layout>.work-team-panel{grid-column:span 1}
+.work-layout>.work-inspector-panel{grid-column:span 2}
+.work-layout>.work-memory-panel,.work-layout>.work-editor-panel,.work-layout>.work-browser-panel{grid-column:1/-1}
+.work-manager-view[data-active-view="team"] .work-layout{grid-template-columns:minmax(260px,.8fr) minmax(360px,1.2fr)}
+.work-manager-view[data-active-view="team"] .work-layout>.work-graph-panel{grid-column:1/-1}
+.work-manager-view[data-active-view="tasks"] .work-layout,
+.work-manager-view[data-active-view="activity"] .work-layout,
+.work-manager-view[data-active-view="knowledge"] .work-layout{grid-template-columns:minmax(0,1fr)}
+.work-manager-view[data-active-view="workspace"] .work-layout{grid-template-columns:minmax(0,1fr)}
+.work-manager-view[data-active-view="activity"] .work-layout>.work-graph-panel{grid-column:1/-1;min-height:320px}
+.work-manager-view[data-active-view="activity"] .work-layout>.work-activity-panel{grid-column:1/-1}
+.work-manager-view[data-active-view="tasks"] .work-layout>.work-task-panel{grid-column:1/-1}
+.work-manager-view[data-active-view="knowledge"] .work-layout>.work-memory-panel{grid-column:1/-1}
+.work-manager-view[data-active-view="workspace"] .work-layout>.work-editor-panel,.work-manager-view[data-active-view="workspace"] .work-layout>.work-browser-panel{grid-column:1/-1}
+.work-filter-label{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--muted)}
+.work-filter-label select{background:var(--input);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 8px;font:inherit}
+.work-manager-view .work-panel{box-shadow:0 5px 18px rgba(0,0,0,.08)}
+.work-manager-view .work-panel>header{cursor:default}
+.work-manager-view .work-agent-card{padding:11px}
+.work-manager-view .work-graph{height:300px}
+.work-manager-view .work-task-list,.work-manager-view .work-activity-list,.work-manager-view .work-memory-list{max-height:none}
+@media(max-width:1050px){.work-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.work-layout{grid-template-columns:repeat(2,minmax(0,1fr))}.work-layout>.work-graph-panel{grid-column:1/-1}.work-heading{flex-direction:column}.work-heading-actions{justify-content:flex-start}}
+@media(max-width:700px){.work-metric-grid{grid-template-columns:1fr 1fr}.work-layout,.work-manager-view[data-active-view="team"] .work-layout{grid-template-columns:minmax(0,1fr)}.work-layout>.work-panel,.work-layout>.work-graph-panel,.work-layout>.work-task-panel,.work-layout>.work-activity-panel,.work-layout>.work-inspector-panel{grid-column:1/-1}.work-overview-intro{align-items:flex-start;flex-direction:column}.work-heading-actions>*{max-width:100%}.work-view-nav{width:100%}}
