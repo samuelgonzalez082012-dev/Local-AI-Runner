@@ -3460,6 +3460,7 @@
     loadSpeechVoices();
     if(benchmarkHistory.length){const latest=benchmarkHistory[0];$('benchmarkResults').innerHTML=(latest.results||[]).map(result=>`<div class="benchmark-row"><strong>${escapeHTML(result.model)}</strong><span>${result.tps?`${result.tps.toFixed(1)} tok/s`:`${result.elapsed.toFixed(1)}s`}</span><span>${escapeHTML(result.error||result.preview||'')}</span></div>`).join('');}
     await Promise.all([loadModels(),refreshWorkspaceInfo(),renderConnectors()]);
+    renderModelCatalog();
     renderToolManagement();renderToolAudit();
     refreshRuntime();
     setInterval(()=>{processScheduledTasks().catch(error=>console.warn('Scheduled task check failed:',error));},15000);
