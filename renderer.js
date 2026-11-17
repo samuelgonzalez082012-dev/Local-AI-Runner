@@ -2309,7 +2309,7 @@
 
 
   // ---------- navigation and local workspaces ----------
-  const VIEW_TITLES={chat:'Chats',projects:'Projects',work:'Work Manager',models:'Models',browser:'Browser',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
+  const VIEW_TITLES={chat:'Chats',projects:'Projects',work:'Work Manager',models:'Models',browser:'Browser',editor:'Code editor',tasks:'Tasks',connections:'Connections',memory:'Memory',insights:'Insights',help:'Help & guides',settings:'Settings'};
   window.addEventListener('work-manager:open-browser',()=>navigate('browser'));
   function navigate(view){
     if(!VIEW_TITLES[view])return;
@@ -2324,7 +2324,7 @@
     }
     applyAppearance();
     document.querySelectorAll('.workspace-view').forEach(section=>section.classList.toggle('active',section.dataset.view===view));
-    document.querySelectorAll('#chatbar [data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===view));
+    document.querySelectorAll('#chatbar .nav-item[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===view));
     $('viewTitle').textContent=t(view);
     $('viewEyebrow').textContent=view==='chat'?t('workspace'):t('local');
     if(view==='projects')renderProjects();
