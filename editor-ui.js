@@ -15,7 +15,9 @@ const palettes={
 };
 const state={tabs:[],active:'',workspace:null,busy:false,preferences:{...defaults}};
 const ext=p=>{const m=String(p).toLowerCase().match(/(\.[^.\/]+)$/);return m?m[1]:'';};
-const icon=p=>({'.js':'JS','.mjs':'JS','.cjs':'JS','.ts':'TS','.tsx':'TS','.jsx':'JS','.html':'<>','.htm':'<>','.css':'#','.json':'{}','.py':'Py','.md':'MD','.yaml':'YML','.yml':'YML','.sql':'SQL','.rs':'Rs','.go':'Go'})[ext(p)]||'TXT';
+const fileIcons={'.html':['<>','html'],'.htm':['<>','html'],'.js':['JS','javascript'],'.mjs':['JS','javascript'],'.cjs':['JS','javascript'],'.jsx':['JS','javascript'],'.ts':['TS','typescript'],'.tsx':['TS','typescript'],'.css':['#','css'],'.json':['{}','json'],'.py':['Py','python'],'.java':['Ja','java']};
+const icon=p=>fileIcons[ext(p)]?.[0]||({'.md':'MD','.yaml':'YML','.yml':'YML','.sql':'SQL','.rs':'Rs','.go':'Go'})[ext(p)]||'TXT';
+const iconClass=p=>'file-icon-'+(fileIcons[ext(p)]?.[1]||'text');
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function notify(message){const el=document.getElementById('toast');if(el){el.textContent=message;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2600);}else console.info(message);}
 function sync(){window.localAI.editor.setSync({origin,tabs:state.tabs.map(t=>({path:t.path,content:t.content,dirty:t.dirty})),active:state.active});}
@@ -71,7 +73,7 @@ function renderTabs(root){
  const strip=root.querySelector('.editor-tabs');if(!strip)return;strip.replaceChildren();
  state.tabs.forEach(tab=>{
   const b=document.createElement('button');b.type='button';b.className='editor-tab'+(tab.path===state.active?' active':'')+(tab.dirty?' dirty':'');
-  b.innerHTML='<span class="editor-file-icon">'+esc(icon(tab.path))+'</span><span class="editor-tab-name">'+esc(tab.path.split('/').pop())+'</span><span class="editor-dirty-dot"></span><span class="editor-tab-close" role="button" aria-label="Close tab">×</span>';b.title=tab.path;
+  b.innerHTML='<span class="editor-file-icon '+iconClass(tab.path)+'">'+esc(icon(tab.path))+'</span><span class="editor-tab-name">'+esc(tab.path.split('/').pop())+'</span><span class="editor-dirty-dot"></span><span class="editor-tab-close" role="button" aria-label="Close tab">×</span>';b.title=tab.path;
   b.addEventListener('click',e=>{if(e.target.closest('.editor-tab-close'))closeTab(tab.path);else{state.active=tab.path;roots.forEach(render);sync();}});
   strip.append(b);
  });
@@ -121,7 +123,7 @@ async function loadTree(root,dir=''){
   if(dir){const up=document.createElement('button');up.type='button';up.className='editor-tree-item folder';up.textContent='↰ ..';up.addEventListener('click',()=>loadTree(root,dir.split('/').slice(0,-1).join('/')));list.append(up);}
   filtered.slice(0,500).forEach(entry=>{
    const b=document.createElement('button');b.type='button';b.className='editor-tree-item '+(entry.type==='directory'?'folder':'file');
-   b.innerHTML='<span>'+(entry.type==='directory'?'▸':esc(icon(entry.path)))+'</span><span>'+esc(entry.name)+'</span>';
+   b.innerHTML=entry.type==='directory'?'<span>▸</span><span>'+esc(entry.name)+'</span>':'<span class="editor-file-icon '+iconClass(entry.path)+'">'+esc(icon(entry.path))+'</span><span>'+esc(entry.name)+'</span>';
    b.title=entry.path;b.addEventListener('click',()=>entry.type==='directory'?loadTree(root,entry.path):openFile(entry.path));list.append(b);
   });
   if(!filtered.length)list.innerHTML='<div class="editor-tree-message">No supported source files in this folder.</div>';
