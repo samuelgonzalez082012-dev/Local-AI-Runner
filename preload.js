@@ -48,6 +48,12 @@ contextBridge.exposeInMainWorld('localAI', Object.freeze({
     setPreferences(value) { return ipcRenderer.invoke('editor:preferences:set', value); },
     onPreferences(callback) { return subscribe('editor:preferences:update', callback); }
   }),
+  openRouter: Object.freeze({
+    status() { return ipcRenderer.invoke('openrouter:status'); },
+    setKey(value) { return ipcRenderer.invoke('openrouter:key:set', String(value || '')); },
+    models() { return ipcRenderer.invoke('openrouter:models'); },
+    chat(payload) { return ipcRenderer.invoke('openrouter:chat', payload || {}); }
+  }),
   work: Object.freeze({
     state() { return ipcRenderer.invoke('work:state'); },
     setFileWritesEnabled(value) { return ipcRenderer.invoke('work:file-writes:set-enabled', value === true); },
