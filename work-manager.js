@@ -4,7 +4,9 @@
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   let state = null;
   let selectedAgent = 'planner';
-  let selectedTask = '';\n  let activeWorkView = 'overview';\n  let activityFilter = 'all';
+  let selectedTask = '';
+  let activeWorkView = 'overview';
+  let activityFilter = 'all';
   const agentDefaults = [
     { id:'planner', name:'Planner', role:'planner', provider:'inherit', model:'', instructions:'Coordinate the team, break work into tasks, and review decisions.', tools:['read','plan','message'], enabled:true },
     { id:'developer-1', name:'Developer 1', role:'developer', provider:'inherit', model:'', instructions:'Implement assigned development tasks within the agreed scope.', tools:['read','write-proposal','message'], enabled:true },
