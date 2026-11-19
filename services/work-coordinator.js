@@ -22,7 +22,7 @@ function createWorkCoordinator({ app, workspace }) {
   let team = { id: 'default', name: 'Default development team', agents: DEFAULT_AGENTS.map(agent => ({ ...agent })), autonomy: 'hybrid', maxConcurrent: 3 };
   let teamTemplates = [];
   let memory = [];
-  let layout = { panels: ['team', 'inspector', 'graph', 'tasks', 'timeline', 'memory', 'editor', 'browser'], hidden: [], widths: {} };
+  let layout = { panels: ['team', 'inspector', 'graph', 'tasks', 'timeline', 'memory', 'editor', 'browser'], hidden: [], widths: {}, grid: {} };
 
   function projectKey() {
     const folder = workspace.getInfo()?.path || 'unselected-workspace';
@@ -62,7 +62,8 @@ function createWorkCoordinator({ app, workspace }) {
     }
     teamTemplates = await loadJson('teams', []);
     memory = await loadJson('memory', []);
-    layout = await loadJson('layout', layout);
+    layout = { ...layout, ...await loadJson('layout', layout) };
+    if (!layout.grid || typeof layout.grid !== 'object' || Array.isArray(layout.grid)) layout.grid = {};
     for (const task of await loadJson('tasks', [])) if (task?.id) tasks.set(task.id, task);
     messages.push(...(await loadJson('messages', [])).slice(-500));
     record('workspace-loaded', { project: projectKey() });
@@ -121,9 +122,20 @@ function createWorkCoordinator({ app, workspace }) {
   async function removeMemory(id) { memory = memory.filter(item => item.id !== id); await saveJson('memory', memory); record('memory-removed', { id }); return true; }
   async function setLayout(value) {
     const allowed = ['team','graph','inspector','timeline','tasks','editor','browser','memory'];
+    const gridAllowed = ['team','graph','tasks','timeline'];
     const panels = Array.isArray(value?.panels) ? [...new Set(value.panels.filter(panel => allowed.includes(panel)))] : layout.panels;
     const hidden = Array.isArray(value?.hidden) ? [...new Set(value.hidden.filter(panel => allowed.includes(panel)))] : [];
-    layout = { panels, hidden, widths: Object.fromEntries(Object.entries(value?.widths || {}).filter(([key, width]) => allowed.includes(key) && Number.isFinite(Number(width))).map(([key, width]) => [key, Math.max(180, Math.min(900, Number(width)))])) };
+    const widths = value?.widths === undefined ? layout.widths : Object.fromEntries(Object.entries(value.widths || {}).filter(([key, width]) => allowed.includes(key) && Number.isFinite(Number(width))).map(([key, width]) => [key, Math.max(180, Math.min(900, Number(width)))]));
+    const grid = value?.grid === undefined ? layout.grid : Object.fromEntries(Object.entries(value.grid || {}).filter(([key, item]) => gridAllowed.includes(key) && item && typeof item === 'object').map(([key, item]) => {
+      const cols = Math.max(3, Math.min(12, Math.round(Number(item.cols) || 4)));
+      return [key, {
+        col: Math.max(1, Math.min(13 - cols, Math.round(Number(item.col) || 1))),
+        row: Math.max(1, Math.min(100, Math.round(Number(item.row) || 1))),
+        cols,
+        rows: Math.max(7, Math.min(24, Math.round(Number(item.rows) || 8)))
+      }];
+    }));
+    layout = { panels, hidden, widths, grid };
     await saveJson('layout', layout); return structuredClone(layout);
   }
   async function createTask(payload) {

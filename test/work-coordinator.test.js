@@ -118,6 +118,33 @@ test('persists reordered panels and clamps custom panel widths', async () => {
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
+test('persists snapped dashboard positions and clamps grid spans', async () => {
+  const { service, directory } = await fixture();
+  try {
+    const layout = await service.setLayout({
+      grid: {
+        team: { col: 10, row: 0, cols: 8, rows: 40 },
+        graph: { col: 4, row: 3, cols: 6, rows: 9 },
+        editor: { col: 1, row: 1, cols: 12, rows: 12 },
+        tasks: { col: 2, row: 4, cols: 5.4, rows: 7.6 },
+        timeline: { col: 0, row: 0, cols: 1, rows: 1 }
+      }
+    });
+    assert.deepEqual(layout.grid, {
+      team: { col: 5, row: 1, cols: 8, rows: 24 },
+      graph: { col: 4, row: 3, cols: 6, rows: 9 },
+      tasks: { col: 2, row: 4, cols: 5, rows: 8 },
+      timeline: { col: 1, row: 1, cols: 3, rows: 7 }
+    });
+
+    const updated = await service.setLayout({ hidden: ['memory'] });
+    assert.deepEqual(updated.grid, layout.grid);
+    const restored = createWorkCoordinator({ app: { getPath: () => directory }, workspace: { getInfo: () => ({ path: path.join(directory, 'project') }) } });
+    await restored.load();
+    assert.deepEqual(restored.getState().layout.grid, layout.grid);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
 test('agents can retrieve task-scoped messages addressed to themselves or the team', async () => {
   const { service, directory } = await fixture();
   try {
